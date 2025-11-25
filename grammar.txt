@@ -1,0 +1,107 @@
+# KL Grammar
+
+## Rules
+
+Program -> TopLevelDecl Program
+Program -> ''
+
+TopLevelDecl -> BindingDecl
+
+BindingDecl -> Identifier = Binding
+
+Binding -> Expr
+Binding -> FunctionDef
+
+FunctionDef -> fn ( FunctionDefArgs ) FunctionReturnType Block
+
+FunctionDefArgs -> ''
+FunctionDefArgs -> FunctionDefArg FunctionDefArgs'
+FunctionDefArgs' -> , FunctionDefArg FunctionDefArgs'
+FunctionDefArgs' -> ''
+
+FunctionDefArg -> Identifier : Type
+
+FunctionReturnType -> : Type
+FunctionReturnType -> ''
+
+Block -> { Statements }
+
+Statements -> Statement Statements
+Statements -> ''
+
+Statement -> ExprStatement
+
+ExprStatement -> Expr LineTerminator
+LineTerminator -> ;
+
+Expr -> AddExpr
+
+AddExpr -> MulExpr AddExpr'
+AddExpr' -> AddBinop MulExpr AddExpr'
+AddExpr' -> ''
+
+MulExpr -> PrefixExpr MulExpr'
+MulExpr' -> MulBinop PrefixExpr MulExpr'
+MulExpr' -> ''
+
+PrefixExpr -> PrefixOp PrefixExpr
+PrefixExpr -> PostfixExpr
+
+PostfixExpr -> Factor PostfixExpr'
+PostfixExpr' -> PostfixOp
+PostfixExpr' -> ''
+
+Factor -> Constant
+Factor -> Identifier
+Factor -> ( Expr )
+
+AddBinop -> +
+AddBinop -> -
+MulBinop -> *
+MulBinop -> /
+PrefixOp -> not
+PrefixOp -> !
+PostfixOp -> ( FCallArgs )
+PostfixOp -> not
+
+FCallArgs -> FCallArg FCallArgs'
+FCallArgs -> ''
+FCallArgs' -> , FCallArgs
+FCallArgs' -> ''
+
+FCallArg -> Identifier
+
+Identifier -> i
+Type -> t
+
+Identifier -> [a-z_][a-z0-9_]*
+Type -> [A-Z][a-z0-9]
+
+## Expression Parse Table
+
+AddBinop    + - or                               ( - Constant FCall Identifier not
+Expr        ( - Constant FCall Identifier not    $ )
+Expr'       + - or ε                             $ )
+Factor      ( - Constant FCall Identifier not    * / and ε
+Factor'     ( Constant FCall Identifier          * / and ε
+MulBinop    * / and                              ( - Constant FCall Identifier not
+Term        ( - Constant FCall Identifier not    + - or ε
+Term'       * / and ε                            + - or ε
+UnOp        - not                                ( Constant FCall Identifier
+
+      ( 
+Expr
+
+## Parse Table
+
+| Node | First | Follow |
+|-----------------------|
+| Program | "fn", "var", eps | "fn", "var", eps |
+| TopLevelStatement | "fn", "var" | "fn", "var", eps |
+| TopLevelStatement' | "fn", "var" | ";" |
+| FunctionDefinition | "fn" | "fn", "var", eps |
+| FunctionDefinitionArguments | Identifier, eps | ")" |
+| FunctionDefinitionArgument | Identifier, eps | ",", ")" |
+| Block | "{" | "fn", "var" |
+| Statements | 
+| FunctionCall | Identifier | ")", BinaryOp
