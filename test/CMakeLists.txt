@@ -11,7 +11,7 @@ FetchContent_MakeAvailable(ktest)
 add_executable(
   kl_compiler_test
   lex_test.cpp
-  # parse_test.cpp
+  parse_test.cpp
 )
 
 set_target_properties(

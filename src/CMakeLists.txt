@@ -2,6 +2,7 @@ add_library(
   kl_compiler_core
   lex.hpp lex.cpp
   parse.hpp parse.cpp
+  parse_node.cpp
 )
 
 add_executable(
@@ -23,6 +24,8 @@ target_include_directories(
   ${LLVM_INCLUDE_DIRS}
 )
 
+message(${LLVM_INCLUDE_DIRS})
+
 target_include_directories(
   kl_compiler_core
   PUBLIC
@@ -36,7 +39,12 @@ target_compile_definitions(
   ${LLVM_DEFINITIONS_LIST}
 )
 
-llvm_map_components_to_libnames(LLVM_LIBS core)
+llvm_map_components_to_libnames(LLVM_LIBS 
+  core
+  support
+)
+
+message("${LLVM_LIBS}")
 
 target_link_libraries(
   kl_compiler

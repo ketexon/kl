@@ -2,8 +2,8 @@
 
 #include <expected>
 #include <format>
+#include <optional>
 #include <string>
-#include <variant>
 #include <vector>
 
 namespace kl {
@@ -24,17 +24,7 @@ struct SourceSpan {
 };
 
 struct Token {
-  using NoneValue = std::monostate;
-  using IntegerValue = std::uint64_t;
-  using FloatValue = long double;
-  using StringValue = std::string;
-
-  using Value = std::variant<
-    std::monostate,
-    IntegerValue,
-    FloatValue,
-    StringValue
-  >;
+  using Value = std::optional<std::string>;
 
   enum class Type {
     // symbols
@@ -48,6 +38,7 @@ struct Token {
     RBrace,
 
     Colon,
+    Semicolon,
     Equals,
     Comma,
     Period,
@@ -80,15 +71,6 @@ struct Token {
   Type type;
   Value value;
   SourceSpan source_span;
-
-  template<typename T>
-  auto get_value() {
-    return std::get<T>(value);
-  }
-  
-  StringValue get_string_value() {
-    return std::get<StringValue>(value);
-  }
 };
 
 struct LexError {
@@ -150,6 +132,9 @@ struct std::formatter<kl::lex::Token::Type> : std::formatter<std::string> {
     case Type::Colon:
       s = "Colon";
       break;
+    case Type::Semicolon:
+      s = "Semicolon";
+      break;
     case Type::Comma:
       s = "Comma";
       break;
@@ -205,19 +190,13 @@ template <>
 struct std::formatter<kl::lex::Token> : std::formatter<std::string> {
   auto format(const kl::lex::Token &token,
               std::format_context &ctx) const {
-    std::string value_string = std::visit([](auto& v) -> std::string {
-	using T = std::remove_cvref_t<decltype(v)>;
-	if constexpr (std::same_as<T, std::monostate>) {
-	  return "";
-	} else {
-	  return std::format(" {{ {} }}", v);
-	}
-    }, token.value);
     return std::formatter<std::string>::format(
 	std::format(
 	  "{}{}",
 	  token.type,
-	  value_string
+	  token.value.has_value()
+	    ? std::format("{{ {} }}", token.value.value())
+	    : std::string{}
 	)
 	, ctx);
   }

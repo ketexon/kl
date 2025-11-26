@@ -4,10 +4,8 @@
 #include <cctype>
 #include <expected>
 #include <iostream>
-#include <optional>
 #include <print>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -97,7 +95,7 @@ struct Context {
     );
   }
 
-  void end_token(Token::Type type, Token::Value value = std::monostate{}) {
+  void end_token(Token::Type type, Token::Value value = std::nullopt) {
     size_t count = location.index - token_start_location.index;
     if (count == 0) {
       return;
@@ -186,6 +184,7 @@ static std::unordered_map<char, Token::Type> symbol_map{
     {'{', Token::Type::LBrace},
     {'}', Token::Type::RBrace},
     {':', Token::Type::Colon},
+    {';', Token::Type::Semicolon},
     {',', Token::Type::Comma},
     {'.', Token::Type::Period},
     // arithmetic
@@ -289,19 +288,7 @@ SublexResult try_lex_number(Context& ctx) {
   }
 
   std::string value_string{ctx.get_token_substring()};
-  try {
-    if (has_decimal) {
-      long double value = std::stold(value_string.c_str());
-      ctx.end_token(Token::Type::Float, value);
-    } else {
-      unsigned long long value = std::stoull(value_string.c_str());
-      ctx.end_token(Token::Type::Integer, value);
-    }
-  } catch (const std::out_of_range &e) {
-    LexError error{ctx.get_source_span(), LexError::Type::OutOfRange,
-                   "Number out of range"};
-    return std::unexpected{error};
-  }
+  ctx.end_token(has_decimal ? Token::Type::Float : Token::Type::Integer, value_string);
 
   return true;
 }

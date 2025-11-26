@@ -6,8 +6,6 @@
 #include <ranges>
 #include <sstream>
 #include <string>
-#include <type_traits>
-#include <variant>
 
 TEST_CASE("Lexing integer", LexInteger) {
   using namespace kl::lex;
@@ -26,8 +24,8 @@ TEST_CASE("Lexing integer", LexInteger) {
     Token token = tokens[0];
 
     test.AssertEq(token.type, Token::Type::Integer, "Should hold an integer");
-    test.Assert(std::holds_alternative<Token::IntegerValue>(token.value), "Should hold an integer");
-    test.AssertEq(std::get<Token::IntegerValue>(token.value), i, "Should be right integer");
+    test.Assert(token.value.has_value(), "Should hold value");
+    test.AssertEq(token.value.value(), std::to_string(i), "Should be right integer");
   }
 }
 
@@ -48,9 +46,9 @@ TEST_CASE("Lexing float", LexFloat) {
     Token token = tokens[0];
 
     test.AssertEq(token.type, Token::Type::Float, "Should lex an float");
-    test.Assert(std::holds_alternative<Token::FloatValue>(token.value), "Should lex an float");
-
-    test.AssertEq(std::get<Token::FloatValue>(token.value), double_value, "Should be right float");
+    test.Assert(token.value.has_value(), "Should hold value");
+    long double token_double = std::stold(token.value.value());
+    test.AssertEq(token_double, double_value, "Should be right float");
   };
 
   test_for("1.", 1.0l);
@@ -126,8 +124,8 @@ TEST_CASE("Lexing identifiers and types", LexIdentifierType) {
 
     Token token = tokens[0];
     test.AssertEq(token.type, type, "Should have right type");
-    test.Assert(std::holds_alternative<Token::StringValue>(token.value), "Should hold a string");
-    test.AssertEq(std::get<Token::StringValue>(token.value), expected_value, "Should hold right string");
+    test.Assert(token.value.has_value(), "Should hold value");
+    test.AssertEq(token.value.value(), expected_value, "Should hold right string");
   };
 
   auto test_fail = [&](std::string s, size_t location) {
@@ -192,17 +190,10 @@ TEST_CASE("Basic lexing", LexBasic) {
     auto& [type, value] = expected[i];
     test.cout << i << '\n';
     test.AssertEq(tok.type, type, "Should hold right type");
-    test.AssertEq(tok.value.index(), value.index(), "Should hold same value type");
-    std::visit([&](auto& a, auto& b) {
-	using TA = std::remove_cvref_t<decltype(a)>;
-	using TB = std::remove_cvref_t<decltype(b)>;
-
-	if constexpr (std::same_as<TA, TB>) {
-	  if constexpr (!std::same_as<TA, Token::NoneValue>) {
-	    test.AssertEq(a, b, "Should hold same value");
-	  }
-	}
-    }, tok.value, value);
+    test.Assert(tok.value.has_value() == value.has_value(), "Should both either hold or not hold value");
+    if (tok.value.has_value()) {
+      test.AssertEq(tok.value.value(), value.value(), "Should hold same value type");
+    }
   }
 }
 
@@ -253,9 +244,9 @@ TEST_CASE("All lexing", LexAll) {
     { Token::Type::WhiteSpace, {}},
     { Token::Type::Identifier, "ident"},
     { Token::Type::WhiteSpace, {}},
-    { Token::Type::Integer, 1ull},
+    { Token::Type::Integer, "1"},
     { Token::Type::WhiteSpace, {}},
-    { Token::Type::Float, 1.0l},
+    { Token::Type::Float, "1.0"},
     { Token::Type::WhiteSpace, {}},
     { Token::Type::String, "hello"},
     { Token::Type::End, {}},
@@ -267,16 +258,9 @@ TEST_CASE("All lexing", LexAll) {
     auto& [type, value] = expected[i];
     test.cout << i << '\n';
     test.AssertEq(tok.type, type, "Should hold right type");
-    test.AssertEq(tok.value.index(), value.index(), "Should hold same value type");
-    std::visit([&](auto& a, auto& b) {
-	using TA = std::remove_cvref_t<decltype(a)>;
-	using TB = std::remove_cvref_t<decltype(b)>;
-
-	if constexpr (std::same_as<TA, TB>) {
-	  if constexpr (!std::same_as<TA, Token::NoneValue>) {
-	    test.AssertEq(a, b, "Should hold same value");
-	  }
-	}
-    }, tok.value, value);
+    test.AssertEq(tok.value.has_value(), value.has_value(), "Should hold same value type");
+    if (tok.value.has_value()) {
+      test.AssertEq(tok.value.value(), value.value(), "Should hold same value type");
+    }
   }
 }
