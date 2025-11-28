@@ -12,6 +12,8 @@ add_executable(
   kl_compiler_test
   lex_test.cpp
   parse_test.cpp
+  test_codegen.cpp
+  test_pipeline.cpp
 )
 
 set_target_properties(

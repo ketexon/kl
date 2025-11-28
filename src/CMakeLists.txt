@@ -1,8 +1,8 @@
 add_library(
   kl_compiler_core
   lex.hpp lex.cpp
-  parse.hpp parse.cpp
-  parse_node.cpp
+  parse.hpp parse.cpp parse_node.cpp
+  codegen.hpp codegen.cpp
 )
 
 add_executable(
@@ -39,10 +39,7 @@ target_compile_definitions(
   ${LLVM_DEFINITIONS_LIST}
 )
 
-llvm_map_components_to_libnames(LLVM_LIBS 
-  core
-  support
-)
+llvm_config(kl_compiler_core USE_SHARED support core irreader)
 
 message("${LLVM_LIBS}")
 

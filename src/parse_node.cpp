@@ -1,79 +1,85 @@
 #include "parse.hpp"
 #include <memory>
 
+#include <print>
 #include <ranges>
 #include <unordered_map>
 #include <vector>
-
-#include <llvm/ADT/APFloat.h>
-#include <llvm/ADT/SmallString.h>
+#include <ostream>
 
 namespace kl {
 namespace ast {
 
-Type::Type(std::string name) : name{name} {}
+Type::Type(std::string name) : Node{Node::Type::Type}, name{name} {}
+
+Node::Node(Type type) : type{type} {}
 
 BindingDeclaration::BindingDeclaration(std::unique_ptr<Identifier> identifier,
                                        std::unique_ptr<Binding> &&binding)
-    : identifier{std::move(identifier)}, binding{std::move(binding)} {}
+    : TopLevelDeclaration{Node::Type::BindingDeclaration},
+      identifier{std::move(identifier)}, binding{std::move(binding)} {}
 
 BindingDeclaration::~BindingDeclaration() = default;
-Statement::Statement() = default;
 
 Program::Program(
     std::vector<std::unique_ptr<TopLevelDeclaration>> &&declarations)
-    : declarations{std::move(declarations)} {}
+    : Node{Node::Type::Program}, declarations{std::move(declarations)} {}
 
 FunctionDefinitionArgument::FunctionDefinitionArgument(
     std::unique_ptr<Identifier> &&identifier, std::unique_ptr<ast::Type> &&type)
-    : identifier{std::move(identifier)}, type{std::move(type)} {}
+    : Node{Node::Type::FunctionDefinitionArgument},
+      identifier{std::move(identifier)}, argument_type{std::move(type)} {}
 
 FunctionDefinition::FunctionDefinition(
     std::vector<std::unique_ptr<FunctionDefinitionArgument>> &&arguments,
     std::optional<std::unique_ptr<ast::Type>> &&return_type,
     std::unique_ptr<Block> &&block)
-    : arguments{std::move(arguments)}, return_type{std::move(return_type)},
-      block{std::move(block)} {}
+    : Binding{Node::Type::FunctionDefinition}, arguments{std::move(arguments)},
+      return_type{std::move(return_type)}, block{std::move(block)} {}
 
 Block::Block(std::vector<std::unique_ptr<Statement>> &&statements)
-    : statements{std::move(statements)} {}
+    : Node{Node::Type::Block}, statements{std::move(statements)} {}
 
-Binding::Binding() = default;
+Identifier::Identifier(std::string name)
+    : Node{Node::Type::Identifier}, name{name} {}
 
 ExpressionStatement::ExpressionStatement(
     std::unique_ptr<Expression> &&expression)
-    : expression{std::move(expression)} {}
+    : Statement{Node::Type::ExpressionStatement},
+      expression{std::move(expression)} {}
 
 FunctionCallExpression::FunctionCallExpression(
     std::unique_ptr<Expression> &&function,
     std::vector<std::unique_ptr<Expression>> &&args)
-    : function{std::move(function)}, arguments{std::move(args)} {}
+    : Expression{Node::Type::FunctionCallExpression},
+      function{std::move(function)}, arguments{std::move(args)} {}
 
 UnaryOperatorExpression::UnaryOperatorExpression(
     UnaryOperator op, std::unique_ptr<Expression> &&expr)
-    : op{op}, expression{std::move(expr)} {}
+    : Expression{Node::Type::UnaryOperatorExpression}, op{op},
+      expression{std::move(expr)} {}
 
 BinaryOperatorExpression::BinaryOperatorExpression(
     BinaryOperator op, std::unique_ptr<Expression> &&left,
     std::unique_ptr<Expression> &&right)
-    : op{op}, left{std::move(left)}, right{std::move(right)} {}
+    : Expression{Node::Type::BinaryOperatorExpression}, op{op},
+      left{std::move(left)}, right{std::move(right)} {}
 
 IdentifierExpression::IdentifierExpression(
     std::unique_ptr<Identifier> &&identifier)
-    : identifier{std::move(identifier)} {}
+    : Expression{Node::Type::IdentifierExpression},
+      identifier{std::move(identifier)} {}
 
 FloatConstantExpression::FloatConstantExpression(std::string value)
     // : value{llvm::APFloatBase::IEEEdouble(), value} {}
-    : value{0.0} {}
+    : ConstantExpression{Node::Type::FloatConstantExpression}, value{value} {}
 
 IntegerConstantExpression::IntegerConstantExpression(std::string value)
     // : value{llvm::APInt::getBitsNeeded(value, 10), value, 10} {}
-    : value{llvm::APInt::getBitsNeeded(value, 10), value, 10} {}
+    : ConstantExpression{Node::Type::IntegerConstantExpression}, value{value} {}
 
 StringConstantExpression::StringConstantExpression(std::string value)
-    : value{value} {}
-
-ConstantExpression::ConstantExpression() = default;
+    : ConstantExpression{Node::Type::StringConstantExpression}, value{value} {}
 
 /** FORMATTING **/
 
@@ -98,7 +104,7 @@ std::string Program::format(std::size_t indent) const {
 std::string FunctionDefinitionArgument::format(std::size_t indent) const {
   return std::format("{}{}: {}", make_indent(indent),
                      identifier ? identifier->format(0) : "<nullptr>",
-                     type ? type->format(0) : "<nullptr>");
+                     argument_type ? argument_type->format(0) : "<nullptr>");
 }
 
 std::string Identifier::format(std::size_t indent) const {
@@ -193,5 +199,98 @@ std::string StringConstantExpression::format(std::size_t indent) const {
   return std::format("{}\"{}\"", make_indent(indent), value);
 }
 
+/** OPERATOR== */
+
+#define KL_AST_OPERATOR_EQ(NodeType)                                           \
+  bool NodeType::operator==(const Node &uncasted_node) const {                 \
+    if (type != uncasted_node.type) {                                          \
+      return false;                                                            \
+    }                                                                          \
+    const auto &other = static_cast<const NodeType &>(uncasted_node);
+
+#define KL_AST_SUBNODE_EQ(a, b)                                                \
+  (static_cast<bool>(a) == static_cast<bool>(b) &&                             \
+   (!(a) || static_cast<const Node &>(*a) == static_cast<const Node &>(*b)))
+
+#define KL_AST_SUBNODE_OPT_EQ(a, b)                                            \
+  ((a).has_value() == (b).has_value() &&                                       \
+   (!(a).has_value() || KL_AST_SUBNODE_EQ(a.value(), b.value())))
+
+#define KL_AST_SUBNODE_RANGE_EQ(as, bs)                                        \
+  std::ranges::equal(as, bs, [](const auto &a, const auto &b) {                \
+    return KL_AST_SUBNODE_EQ(a, b);                                            \
+  })
+
+KL_AST_OPERATOR_EQ(StringConstantExpression)
+return value == other.value;
+}
+
+KL_AST_OPERATOR_EQ(IntegerConstantExpression)
+return value == other.value;
+}
+
+KL_AST_OPERATOR_EQ(FloatConstantExpression)
+return value == other.value;
+}
+
+KL_AST_OPERATOR_EQ(IdentifierExpression)
+return KL_AST_SUBNODE_EQ(identifier, other.identifier);
+}
+
+KL_AST_OPERATOR_EQ(BinaryOperatorExpression)
+return op == other.op && KL_AST_SUBNODE_EQ(left, other.left) &&
+       KL_AST_SUBNODE_EQ(right, other.right);
+}
+
+KL_AST_OPERATOR_EQ(UnaryOperatorExpression)
+return op == other.op && KL_AST_SUBNODE_EQ(expression, other.expression);
+}
+
+KL_AST_OPERATOR_EQ(FunctionCallExpression)
+return KL_AST_SUBNODE_EQ(function, other.function) &&
+       KL_AST_SUBNODE_RANGE_EQ(arguments, other.arguments);
+}
+
+KL_AST_OPERATOR_EQ(ExpressionStatement)
+return KL_AST_SUBNODE_EQ(expression, other.expression);
+}
+
+KL_AST_OPERATOR_EQ(Block)
+return KL_AST_SUBNODE_RANGE_EQ(statements, other.statements);
+}
+
+KL_AST_OPERATOR_EQ(FunctionDefinition)
+return KL_AST_SUBNODE_RANGE_EQ(arguments, other.arguments) &&
+       KL_AST_SUBNODE_OPT_EQ(return_type, other.return_type) &&
+       KL_AST_SUBNODE_EQ(block, other.block);
+}
+
+KL_AST_OPERATOR_EQ(Identifier)
+return name == other.name;
+}
+
+KL_AST_OPERATOR_EQ(FunctionDefinitionArgument)
+return KL_AST_SUBNODE_EQ(identifier, other.identifier) &&
+       KL_AST_SUBNODE_EQ(argument_type, other.argument_type);
+}
+
+KL_AST_OPERATOR_EQ(Program)
+  return KL_AST_SUBNODE_RANGE_EQ(declarations, other.declarations);
+}
+
+KL_AST_OPERATOR_EQ(Type)
+  return name == other.name;
+}
+
+KL_AST_OPERATOR_EQ(BindingDeclaration)
+return KL_AST_SUBNODE_EQ(identifier, other.identifier) &&
+       KL_AST_SUBNODE_EQ(binding, other.binding);
+}
+
 } // namespace ast
 } // namespace kl
+
+std::ostream& operator<<(std::ostream& os, const kl::ast::Node& node) {
+  std::print(os, "{}", node.format(0));
+  return os;
+}

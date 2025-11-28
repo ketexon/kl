@@ -10,9 +10,6 @@
 #include <string>
 #include <vector>
 
-#include <llvm/ADT/APFloat.h>
-#include <llvm/ADT/APInt.h>
-
 namespace kl {
 namespace ast {
 
@@ -28,28 +25,37 @@ struct Type;
 struct FunctionDefinition;
 struct FunctionDefinitionArgument;
 
-//
-
 struct Node {
   enum class Type {
     Binding,
+    IntegerConstantExpression,
+    FloatConstantExpression,
+    StringConstantExpression,
     Block,
     BindingDeclaration,
     Node,
+    ExpressionStatement,
     Program,
+    FunctionCallExpression,
     Identifier,
     TopLevelDeclaration,
     FunctionDefinition,
     FunctionDefinitionArgument,
     Type,
+    BinaryOperatorExpression,
+    IdentifierExpression,
+    UnaryOperatorExpression,
   };
 
-  Type type;
+  Node(Type type);
   virtual std::string format(std::size_t indent = 0) const {
     return make_indent(indent) + "<unknown_node>";
   };
 
+  Type type;
+
   virtual ~Node() = default;
+  virtual bool operator==(const Node& other) const = 0;
 
 protected:
   static inline std::string make_indent(std::size_t size) {
@@ -60,24 +66,30 @@ protected:
 struct Type : Node {
   Type(std::string name);
   std::string format(std::size_t indent) const override;
+  bool operator==(const Node& other) const override;
 
   std::string name;
 };
 
 struct Identifier : Node {
-  constexpr Identifier(std::string name) : name{name} {}
+  Identifier(std::string name);
   std::string format(std::size_t indent) const override;
+  bool operator==(const Node& other) const override;
 
   std::string name;
 };
 
-struct TopLevelDeclaration : Node {};
+struct TopLevelDeclaration : Node {
+protected:
+  using Node::Node;
+};
 
 struct BindingDeclaration : TopLevelDeclaration {
   BindingDeclaration(std::unique_ptr<Identifier> identifier,
                      std::unique_ptr<Binding> &&binding);
   ~BindingDeclaration();
   std::string format(std::size_t indent) const override;
+  bool operator==(const Node& other) const override;
 
   std::unique_ptr<Identifier> identifier;
   std::unique_ptr<Binding> binding;
@@ -86,32 +98,38 @@ struct BindingDeclaration : TopLevelDeclaration {
 struct Program : Node {
   Program(std::vector<std::unique_ptr<TopLevelDeclaration>> &&);
   std::string format(std::size_t indent) const override;
+  bool operator==(const Node& other) const override;
 
   std::vector<std::unique_ptr<TopLevelDeclaration>> declarations;
 };
 
 struct Binding : Node {
 protected:
-  Binding();
+  using Node::Node;
 };
 
 struct Statement : Node {
 protected:
-  Statement();
+  using Node::Node;
 };
 
-struct Expression : Binding {};
+struct Expression : Binding {
+protected:
+  using Binding::Binding;
+};
 
 struct IdentifierExpression : Expression {
-  IdentifierExpression(std::unique_ptr<Identifier>&&);
+  IdentifierExpression(std::unique_ptr<Identifier> &&);
   std::string format(std::size_t indent) const override;
+  bool operator==(const Node& other) const override;
 
   std::unique_ptr<Identifier> identifier;
 };
 
 struct ExpressionStatement : Statement {
-  ExpressionStatement(std::unique_ptr<Expression>&&);
+  ExpressionStatement(std::unique_ptr<Expression> &&);
   std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
 
   std::unique_ptr<Expression> expression;
 };
@@ -124,9 +142,11 @@ enum class BinaryOperator {
 };
 
 struct BinaryOperatorExpression : Expression {
-  BinaryOperatorExpression(BinaryOperator, std::unique_ptr<Expression>&&, std::unique_ptr<Expression>&&);
+  BinaryOperatorExpression(BinaryOperator, std::unique_ptr<Expression> &&,
+                           std::unique_ptr<Expression> &&);
 
-  std::string format(std::size_t) const;
+  std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
 
   BinaryOperator op;
   std::unique_ptr<Expression> left;
@@ -139,16 +159,19 @@ enum class UnaryOperator {
 };
 
 struct UnaryOperatorExpression : Expression {
-  UnaryOperatorExpression(UnaryOperator, std::unique_ptr<Expression>&&);
-  std::string format(std::size_t) const;
+  UnaryOperatorExpression(UnaryOperator, std::unique_ptr<Expression> &&);
+  std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
 
   UnaryOperator op;
   std::unique_ptr<Expression> expression;
 };
 
 struct FunctionCallExpression : Expression {
-  FunctionCallExpression(std::unique_ptr<Expression>&&, std::vector<std::unique_ptr<Expression>>&&);
-  std::string format(std::size_t) const;
+  FunctionCallExpression(std::unique_ptr<Expression> &&,
+                         std::vector<std::unique_ptr<Expression>> &&);
+  std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
 
   std::unique_ptr<Expression> function;
   std::vector<std::unique_ptr<Expression>> arguments;
@@ -156,26 +179,29 @@ struct FunctionCallExpression : Expression {
 
 struct ConstantExpression : Expression {
 protected:
-  ConstantExpression();
+  using Expression::Expression;
 };
 
 struct FloatConstantExpression : ConstantExpression {
   FloatConstantExpression(std::string);
-  std::string format(std::size_t) const;
+  std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
 
-  llvm::APFloat value;
+  std::string value;
 };
 
 struct IntegerConstantExpression : ConstantExpression {
   IntegerConstantExpression(std::string);
-  std::string format(std::size_t) const;
+  std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
 
-  llvm::APInt value;
+  std::string value;
 };
 
 struct StringConstantExpression : ConstantExpression {
   StringConstantExpression(std::string);
-  std::string format(std::size_t) const;
+  std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
 
   std::string value;
 };
@@ -185,14 +211,16 @@ struct FunctionDefinitionArgument : Node {
                              std::unique_ptr<ast::Type> &&type);
 
   std::unique_ptr<Identifier> identifier;
-  std::unique_ptr<ast::Type> type;
+  std::unique_ptr<ast::Type> argument_type;
 
   std::string format(std::size_t indent) const override;
+  bool operator==(const Node& other) const override;
 };
 
 struct Block : Node {
   Block(std::vector<std::unique_ptr<Statement>> &&statements);
   std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
 
   std::vector<std::unique_ptr<Statement>> statements;
 };
@@ -203,6 +231,7 @@ struct FunctionDefinition : Binding {
       std::optional<std::unique_ptr<ast::Type>> &&return_type,
       std::unique_ptr<Block> &&block);
   std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
 
   std::vector<std::unique_ptr<FunctionDefinitionArgument>> arguments;
   std::optional<std::unique_ptr<ast::Type>> return_type;
@@ -265,6 +294,30 @@ struct std::formatter<kl::ast::Node::Type> : std::formatter<std::string> {
     case kl::ast::Node::Type::Type:
       s = "Type";
       break;
+    case kl::ast::Node::Type::IntegerConstantExpression:
+      s = "IntegerConstantExpression";
+      break;
+    case kl::ast::Node::Type::FloatConstantExpression:
+      s = "FloatConstantExpression";
+      break;
+    case kl::ast::Node::Type::StringConstantExpression:
+      s = "StringConstantExpression";
+      break;
+    case kl::ast::Node::Type::ExpressionStatement:
+      s = "ExpressionStatement";
+      break;
+    case kl::ast::Node::Type::FunctionCallExpression:
+      s = "FunctionCallExpression";
+      break;
+    case kl::ast::Node::Type::BinaryOperatorExpression:
+      s = "BinaryOperatorExpression";
+      break;
+    case kl::ast::Node::Type::IdentifierExpression:
+      s = "IdentifierExpression";
+      break;
+    case kl::ast::Node::Type::UnaryOperatorExpression:
+      s = "UnaryOperatorExpression";
+      break;
     }
     return std::formatter<std::string>::format(s, ctx);
   }
@@ -291,3 +344,5 @@ struct std::formatter<kl::ast::Program> : std::formatter<std::string> {
         std::format("{}", program.format(0)), ctx);
   }
 };
+
+std::ostream& operator<<(std::ostream&, const kl::ast::Node& node);

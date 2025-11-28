@@ -15,13 +15,12 @@ namespace lex {
 
 struct Context {
   Context(std::string_view sv, std::string filename)
-    : filename{filename}, sv{sv}, location {
-      filename,
-	0, // index
-	1, // line
-	1  //  column
-    }
-  {}
+      : filename{filename}, sv{sv}, location{
+                                        filename,
+                                        0, // index
+                                        1, // line
+                                        1  //  column
+                                    } {}
 
   std::string_view sv;
   std::string filename;
@@ -30,9 +29,7 @@ struct Context {
 
   SourceLocation token_start_location;
 
-  char peek() const {
-    return sv[location.index];
-  }
+  char peek() const { return sv[location.index]; }
 
   char eat() {
     char result = sv[location.index];
@@ -45,54 +42,38 @@ struct Context {
     return result;
   }
 
-  char is(char ch) {
-    return !is_end() && peek() == ch;
-  }
+  char is(char ch) { return !is_end() && peek() == ch; }
 
-  char is_in(std::string s) {
-    return !is_end() && s.contains(peek());
-  }
+  char is_in(std::string s) { return !is_end() && s.contains(peek()); }
 
-  bool is_newline() const {
-    return !is_end() && is_newline(peek());
-  }
+  bool is_newline() const { return !is_end() && is_newline(peek()); }
 
-  static bool is_newline(char ch) {
-    return ch == '\n' || ch == '\r';
-  }
+  static bool is_newline(char ch) { return ch == '\n' || ch == '\r'; }
 
-  bool is_whitespace() const {
-    return !is_end() && is_whitespace(peek());
-  }
+  bool is_whitespace() const { return !is_end() && is_whitespace(peek()); }
 
   static bool is_whitespace(char ch) {
     return std::isblank(static_cast<int>(ch));
   }
 
-  bool is_end() const {
-    return location.index >= sv.size();
-  }
+  bool is_end() const { return location.index >= sv.size(); }
 
-  void begin_token() {
-    token_start_location = location;
-  }
+  void begin_token() { token_start_location = location; }
 
   size_t token_length() const {
     return location.index - token_start_location.index;
   }
 
   SourceSpan get_source_span() const {
-    return SourceSpan {
-      token_start_location,
-      location,
+    return SourceSpan{
+        token_start_location,
+        location,
     };
   }
 
   std::string_view get_token_substring() const {
-    return sv.substr(
-      token_start_location.index,
-      location.index - token_start_location.index
-    );
+    return sv.substr(token_start_location.index,
+                     location.index - token_start_location.index);
   }
 
   void end_token(Token::Type type, Token::Value value = std::nullopt) {
@@ -101,31 +82,30 @@ struct Context {
       return;
     }
     push(Token{
-	type,
-	value,
-	get_source_span(),
+        type,
+        value,
+        get_source_span(),
     });
   }
 
-  void push(Token&& token) {
-    tokens.push_back(std::move(token));
-  }
+  void push(Token &&token) { tokens.push_back(std::move(token)); }
 
   static bool is_lower(char ch) { return (ch >= 'a' && ch <= 'z'); }
   static bool is_upper(char ch) { return (ch >= 'A' && ch <= 'Z'); }
   static bool is_alpha(char ch) { return is_lower(ch) || is_upper(ch); }
 
-  bool is_numeric() const {
-    return !is_end() && is_numeric(peek());
-  }
+  bool is_numeric() const { return !is_end() && is_numeric(peek()); }
   static bool is_numeric(char ch) { return (ch >= '0' && ch <= '9'); }
-  static bool is_alphanumeric(char ch) { return is_alpha(ch) || is_numeric(ch); }
-
+  static bool is_alphanumeric(char ch) {
+    return is_alpha(ch) || is_numeric(ch);
+  }
 
   bool is_valid_identifier_start() const {
     return !is_end() && is_valid_identifier_start(peek());
   }
-  static bool is_valid_identifier_start(char ch) { return ch == '_' || is_lower(ch); }
+  static bool is_valid_identifier_start(char ch) {
+    return ch == '_' || is_lower(ch);
+  }
 
   bool is_valid_type_start() const {
     return !is_end() && is_valid_type_start(peek());
@@ -154,7 +134,7 @@ struct Context {
 
 using SublexResult = std::expected<bool, LexError>;
 
-SublexResult try_lex_whitespace(Context& ctx) {
+SublexResult try_lex_whitespace(Context &ctx) {
   ctx.begin_token();
   while (ctx.is_whitespace()) {
     ctx.eat();
@@ -166,7 +146,7 @@ SublexResult try_lex_whitespace(Context& ctx) {
   return true;
 }
 
-SublexResult try_lex_newline(Context& ctx) {
+SublexResult try_lex_newline(Context &ctx) {
   ctx.begin_token();
   while (ctx.is_newline()) {
     ctx.eat();
@@ -195,7 +175,7 @@ static std::unordered_map<char, Token::Type> symbol_map{
     {'/', Token::Type::ForwardSlash},
 };
 
-SublexResult try_lex_symbol(Context& ctx) {
+SublexResult try_lex_symbol(Context &ctx) {
   ctx.begin_token();
   char symbol = ctx.peek();
   if (!symbol_map.contains(symbol)) {
@@ -210,7 +190,7 @@ static std::unordered_map<std::string, Token::Type> keyword_map{
     {"fn", Token::Type::Fn},
 };
 
-SublexResult try_lex_type_identifier_or_keyword(Context& ctx) {
+SublexResult try_lex_type_identifier_or_keyword(Context &ctx) {
   ctx.begin_token();
   bool is_type = false;
 
@@ -223,7 +203,8 @@ SublexResult try_lex_type_identifier_or_keyword(Context& ctx) {
   }
 
   auto is_valid_continue = [&, is_type]() {
-    return is_type ? ctx.is_valid_type_continue() : ctx.is_valid_identifier_continue();
+    return is_type ? ctx.is_valid_type_continue()
+                   : ctx.is_valid_identifier_continue();
   };
 
   while (!ctx.is_end()) {
@@ -231,12 +212,12 @@ SublexResult try_lex_type_identifier_or_keyword(Context& ctx) {
       // an type/identifier cannot "end" with the start to another identifier
       // as that would look like one type/identifier
       if (!ctx.is_valid_type_or_ident_end()) {
-	char ch = ctx.eat();
+        char ch = ctx.eat();
         LexError error{
-	  ctx.get_source_span(),
-	  LexError::Type::InvalidIdentifier,
-	  std::format("Invalid character '{}' in {}", ch,
-		      is_type ? "type" : "identifier"),
+            ctx.get_source_span(),
+            LexError::Type::InvalidIdentifier,
+            std::format("Invalid character '{}' in {}", ch,
+                        is_type ? "type" : "identifier"),
         };
 
         return std::unexpected{error};
@@ -258,7 +239,7 @@ SublexResult try_lex_type_identifier_or_keyword(Context& ctx) {
   return true;
 }
 
-SublexResult try_lex_number(Context& ctx) {
+SublexResult try_lex_number(Context &ctx) {
   if (!ctx.is_numeric()) {
     return false;
   }
@@ -274,9 +255,9 @@ SublexResult try_lex_number(Context& ctx) {
       ctx.eat();
       if (has_decimal) {
         LexError error{
-	  ctx.get_source_span(),
-	  LexError::Type::UnexpectedSymbol,
-	  "Multiple dots in number literal",
+            ctx.get_source_span(),
+            LexError::Type::UnexpectedSymbol,
+            "Multiple dots in number literal",
         };
         return std::unexpected<LexError>{error};
       }
@@ -288,23 +269,18 @@ SublexResult try_lex_number(Context& ctx) {
   }
 
   std::string value_string{ctx.get_token_substring()};
-  ctx.end_token(has_decimal ? Token::Type::Float : Token::Type::Integer, value_string);
+  ctx.end_token(has_decimal ? Token::Type::Float : Token::Type::Integer,
+                value_string);
 
   return true;
 }
 
-std::unordered_map<char, char> escape_sequence_map {
-  { 't', '\t' },
-  { 'r', '\r' },
-  { 'n', '\n' },
-  { '\\', '\\' },
-  { '\'', '\'' },
-  { '"', '"' },
-  { '?', '?' },
-  { '0', '\0' },
+std::unordered_map<char, char> escape_sequence_map{
+    {'t', '\t'},  {'r', '\r'}, {'n', '\n'}, {'\\', '\\'},
+    {'\'', '\''}, {'"', '"'},  {'?', '?'},  {'0', '\0'},
 };
 
-SublexResult try_lex_string(Context& ctx) {
+SublexResult try_lex_string(Context &ctx) {
   ctx.begin_token();
   if (!ctx.is('"')) {
     return false;
@@ -315,18 +291,17 @@ SublexResult try_lex_string(Context& ctx) {
 
   bool is_escaping = false;
   bool terminated = false;
-  while(!ctx.is_end()) {
+  while (!ctx.is_end()) {
     char ch = ctx.eat();
     if (is_escaping) {
       if (escape_sequence_map.contains(ch)) {
-	ss << escape_sequence_map.at(ch);
-      }
-      else {
-	return std::unexpected{LexError {
-	  ctx.get_source_span(),
-	    LexError::Type::InvalidEscapeSequence,
-	    std::format("Unknown escape char: {}", ch),
-	}};
+        ss << escape_sequence_map.at(ch);
+      } else {
+        return std::unexpected{LexError{
+            ctx.get_source_span(),
+            LexError::Type::InvalidEscapeSequence,
+            std::format("Unknown escape char: {}", ch),
+        }};
       }
       is_escaping = false;
       continue;
@@ -346,10 +321,10 @@ SublexResult try_lex_string(Context& ctx) {
   }
 
   if (!terminated) {
-    return std::unexpected{LexError {
-      ctx.get_source_span(),
-      LexError::Type::UnterminatedString,
-      "Unterminated string",
+    return std::unexpected{LexError{
+        ctx.get_source_span(),
+        LexError::Type::UnterminatedString,
+        "Unterminated string",
     }};
   }
 
@@ -357,7 +332,7 @@ SublexResult try_lex_string(Context& ctx) {
   return true;
 }
 
-using Sublexer = SublexResult (*)(Context&);
+using Sublexer = SublexResult (*)(Context &);
 
 static auto sublexers = std::to_array<Sublexer>({
     try_lex_whitespace,
@@ -373,7 +348,9 @@ LexResult try_lex(std::string_view sv, std::string filename) {
 
   while (!ctx.is_end()) {
     bool found_sublexer = false;
+    int sublexer_index = 0;
     for (const auto &sublexer : sublexers) {
+      SourceLocation old_location = ctx.location;
       SublexResult result = sublexer(ctx);
 
       if (!result.has_value()) {
@@ -381,10 +358,19 @@ LexResult try_lex(std::string_view sv, std::string filename) {
       }
 
       if (!result.value()) {
+        if (old_location.index != ctx.location.index) {
+          return std::unexpected{LexError{
+              SourceSpan{old_location, old_location},
+              LexError::Type::InternalError,
+              "Sublexer returned false but still modified context",
+          }};
+        }
+        ++sublexer_index;
         continue;
       }
 
       found_sublexer = true;
+      break;
     }
 
     if (found_sublexer) {
@@ -392,9 +378,9 @@ LexResult try_lex(std::string_view sv, std::string filename) {
     }
 
     // no sublexers matched, return error
-    SourceSpan unexpected_span {
-      ctx.location,
-      ctx.location,
+    SourceSpan unexpected_span{
+        ctx.location,
+        ctx.location,
     };
     unexpected_span.end.index += 1;
 
@@ -407,13 +393,10 @@ LexResult try_lex(std::string_view sv, std::string filename) {
     return std::unexpected{error};
   }
 
-  ctx.push(Token {
-      Token::Type::End,
-      SourceSpan {
-	ctx.location,
-	ctx.location,
-      }
-  });
+  ctx.push(Token{Token::Type::End, SourceSpan{
+                                       ctx.location,
+                                       ctx.location,
+                                   }});
 
   return ctx.tokens;
 }
