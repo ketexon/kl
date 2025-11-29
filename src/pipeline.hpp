@@ -1,12 +1,16 @@
 #pragma once
 
+#include "codegen.hpp"
 #include "lex.hpp"
 #include "parse.hpp"
 
 #include <concepts>
 #include <expected>
+#include <llvm/IR/LLVMContext.h>
 #include <string_view>
 #include <type_traits>
+
+#include <llvm/IR/Module.h>
 
 namespace kl {
 namespace pipeline {
@@ -28,6 +32,15 @@ struct ParseStage
     : Stage<std::vector<kl::lex::Token>, std::unique_ptr<kl::ast::Program>,
             kl::ast::ParseError> {
   Result pipe(Input input) override { return kl::ast::try_parse(input); }
+};
+
+struct CodegenStage
+    : Stage<const std::unique_ptr<ast::Program> &,
+            std::unique_ptr<llvm::Module>, kl::codegen::CodegenError> {
+  std::unique_ptr<llvm::LLVMContext> &llvm_context;
+  CodegenStage(std::unique_ptr<llvm::LLVMContext> &llvm_context)
+      : llvm_context{llvm_context} {}
+  Result pipe(Input input) override { return codegen::try_codegen(llvm_context, input); }
 };
 
 } // namespace pipeline
