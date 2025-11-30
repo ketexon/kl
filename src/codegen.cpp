@@ -181,6 +181,13 @@ void codegen_function_binding_decl(
 
   ctx.ir_builder->SetInsertPoint(basic_block);
   codegen_block(ctx, *function_def.block);
+
+  if (!function_def.return_type.has_value() || function_def.return_type.value()->is_builtin(ast::BuiltinType::Unit)) {
+    auto terminator = basic_block->getTerminator();
+    if (terminator == nullptr) {
+      ctx.ir_builder->CreateRet(nullptr);
+    }
+  }
 }
 
 void codegen_binding_decl(CodegenContext &ctx,

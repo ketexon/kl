@@ -10,7 +10,26 @@
 namespace kl {
 namespace ast {
 
-Type::Type(std::string name) : Node{Node::Type::Type}, name{name} {}
+static std::unordered_map<std::string, BuiltinType> builtin_type_map {
+  { "Unit", BuiltinType::Unit },
+};
+
+std::optional<BuiltinType> Type::get_builtin_type(const std::string& s) {
+  auto it = builtin_type_map.find(s);
+  if (it != builtin_type_map.end()) {
+    return it->second;
+  }
+  return std::nullopt;
+}
+
+Type::Type(std::string name) : Node{Node::Type::Type} {
+  auto builtin = get_builtin_type(name);
+  if (builtin.has_value()) {
+    this->name = builtin.value();
+  } else {
+    this->name = name;
+  }
+}
 
 Node::Node(Type type) : type{type} {}
 
@@ -84,7 +103,9 @@ StringConstantExpression::StringConstantExpression(std::string value)
 /** FORMATTING **/
 
 std::string Type::format(std::size_t indent) const {
-  return make_indent(indent) + name;
+  return std::visit([indent](const auto& v) {
+    return std::format("{}{}", make_indent(indent), v);
+  }, name);
 };
 
 std::string BindingDeclaration::format(std::size_t indent) const {

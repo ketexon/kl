@@ -63,12 +63,30 @@ protected:
   }
 };
 
+enum class BuiltinType {
+  Unit,
+};
+
 struct Type : Node {
   Type(std::string name);
   std::string format(std::size_t indent) const override;
   bool operator==(const Node& other) const override;
 
-  std::string name;
+  static std::optional<BuiltinType> get_builtin_type(const std::string&);
+  std::variant<BuiltinType, std::string> name;
+
+  template<typename T>
+  constexpr auto get() const {
+    return std::get<T>(name);
+  }
+
+  constexpr bool is_builtin() const {
+    return std::holds_alternative<BuiltinType>(name);
+  }
+
+  constexpr bool is_builtin(BuiltinType type) const {
+    return is_builtin() && get<BuiltinType>() == type;
+  }
 };
 
 struct Identifier : Node {
@@ -342,6 +360,19 @@ struct std::formatter<kl::ast::Program> : std::formatter<std::string> {
   auto format(const kl::ast::Program &program, std::format_context &ctx) const {
     return std::formatter<std::string>::format(
         std::format("{}", program.format(0)), ctx);
+  }
+};
+
+template <>
+struct std::formatter<kl::ast::BuiltinType> : std::formatter<std::string> {
+  auto format(const kl::ast::BuiltinType &builtin, std::format_context &ctx) const {
+    std::string s;
+    switch(builtin) {
+    case kl::ast::BuiltinType::Unit:
+      s = "Unit";
+      break;
+    }
+    return std::formatter<std::string>::format(s, ctx);
   }
 };
 
