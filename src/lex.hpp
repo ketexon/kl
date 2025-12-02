@@ -52,8 +52,10 @@ struct Token {
 
     // Keywords
     Fn,
+    Return,
+    Extern,
 
-    // 
+    // Identifiers
     Type,
     Identifier,
 
@@ -63,6 +65,36 @@ struct Token {
     String,
 
     End,
+  };
+
+  constexpr static const char* type_to_string(Type t) {
+    switch(t) {
+    case Type::WhiteSpace: return "WhiteSpace";
+    case Type::NewLine: return "NewLine";
+    case Type::LParen: return "LParen";
+    case Type::RParen: return "RParen";
+    case Type::LBrace: return "LBrace";
+    case Type::RBrace: return "RBrace";
+    case Type::Colon: return "Colon";
+    case Type::Semicolon: return "Semicolon";
+    case Type::Equals: return "Equals";
+    case Type::Comma: return "Comma";
+    case Type::Period: return "Period";
+    case Type::Plus: return "Plus";
+    case Type::Minus: return "Minus";
+    case Type::Star: return "Star";
+    case Type::ForwardSlash: return "ForwardSlash";
+    case Type::Percent: return "Percent";
+    case Type::Fn: return "Fn";
+    case Type::Return: return "Return";
+    case Type::Extern: return "Extern";
+    case Type::Type: return "Type";
+    case Type::Identifier: return "Identifier";
+    case Type::Integer: return "Integer";
+    case Type::Float: return "Float";
+    case Type::String: return "String";
+    case Type::End: return "End";
+    }
   };
 
   Token(Type type, Value value, SourceSpan source_span) : type{type}, value{value}, source_span{source_span} {}
@@ -82,6 +114,17 @@ struct LexError {
     InvalidEscapeSequence,
     UnterminatedString,
   };
+
+  constexpr static const char* type_to_string(Type t) {
+    switch(t) {
+    case Type::UnexpectedSymbol: return "UnexpectedSymbol";
+    case Type::OutOfRange: return "OutOfRange";
+    case Type::InternalError: return "InternalError";
+    case Type::InvalidIdentifier: return "InvalidIdentifier";
+    case Type::InvalidEscapeSequence: return "InvalidEscapeSequence";
+    case Type::UnterminatedString: return "UnterminatedString";
+    }
+  }
 
   SourceSpan source_span;
   Type type;
@@ -105,83 +148,19 @@ std::ostream &operator<<(std::ostream &os,
                          const kl::lex::Token::Type &source_location);
 
 template <>
+struct std::formatter<kl::lex::LexError::Type> : std::formatter<std::string> {
+  auto format(kl::lex::LexError::Type type,
+              std::format_context &ctx) const {
+    return std::formatter<std::string>::format(kl::lex::LexError::type_to_string(type), ctx);
+  }
+};
+
+
+template <>
 struct std::formatter<kl::lex::Token::Type> : std::formatter<std::string> {
   auto format(const kl::lex::Token::Type &type,
               std::format_context &ctx) const {
-    using Type = kl::lex::Token::Type;
-    std::string s;
-    switch (type) {
-    case Type::LBrace:
-      s = "LBrace";
-      break;
-    case Type::RBrace:
-      s = "RBrace";
-      break;
-    case Type::LParen:
-      s = "LParen";
-      break;
-    case Type::RParen:
-      s = "LParen";
-      break;
-    case Type::WhiteSpace:
-      s = "WhiteSpace";
-      break;
-    case Type::NewLine:
-      s = "NewLine";
-      break;
-    case Type::Colon:
-      s = "Colon";
-      break;
-    case Type::Semicolon:
-      s = "Semicolon";
-      break;
-    case Type::Comma:
-      s = "Comma";
-      break;
-    case Type::Period:
-      s = "Period";
-      break;
-    case Type::Fn:
-      s = "Fn";
-      break;
-    case kl::lex::Token::Type::Type:
-      s = std::format("Type");
-      break;
-    case kl::lex::Token::Type::Identifier:
-      s = std::format("Identifier");
-      break;
-    case kl::lex::Token::Type::Integer:
-      s = std::format("Integer");
-      break;
-    case kl::lex::Token::Type::Float:
-      s = std::format("Float");
-      break;
-    case kl::lex::Token::Type::String:
-      s = std::format("String");
-      break;
-    case kl::lex::Token::Type::End:
-      s = std::format("End");
-      break;
-    case kl::lex::Token::Type::Equals:
-      s = std::format("Equals");
-      break;
-    case kl::lex::Token::Type::Plus:
-      s = std::format("Plus");
-      break;
-    case kl::lex::Token::Type::Minus:
-      s = std::format("Minus");
-      break;
-    case kl::lex::Token::Type::Star:
-      s = std::format("Star");
-      break;
-    case kl::lex::Token::Type::ForwardSlash:
-      s = std::format("ForwardSlash");
-      break;
-    case kl::lex::Token::Type::Percent:
-      s = std::format("Percent");
-      break;
-    }
-    return std::formatter<std::string>::format(s, ctx);
+    return std::formatter<std::string>::format(kl::lex::Token::type_to_string(type), ctx);
   }
 };
 
@@ -218,5 +197,20 @@ struct std::formatter<kl::lex::SourceLocation> : std::formatter<std::string> {
   }
 };
 
+template <>
+struct std::formatter<kl::lex::LexError> : std::formatter<std::string> {
+  auto format(const kl::lex::LexError &err,
+              std::format_context &ctx) const {
+    return std::formatter<std::string>::format(
+      std::format("LexError {} at {} to {} \"{}\"",
+	err.type,
+	err.source_span.start,
+	err.source_span.end,
+	err.message
+      ),
+      ctx
+    );
+  }
+};
 
 #undef KL_LEX_TOKEN

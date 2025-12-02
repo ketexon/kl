@@ -34,32 +34,32 @@ TEST_CASE("Simple Program", ParseSimpleProgram) {
   auto program = std::move(parse_result.value());
   test.Assert(program != nullptr, "Program should not be nullptr");
 
-  auto function_call = std::make_unique<ast::FunctionCallExpression>(
-      std::make_unique<ast::IdentifierExpression>(
-          std::make_unique<ast::Identifier>("print")),
-      std::vector<std::unique_ptr<ast::Expression>>{
+  auto function_call = std::make_unique<ast::FunctionCallExpressionNode>(
+      std::make_unique<ast::IdentifierExpressionNode>(
+          std::make_unique<ast::IdentifierNode>("print")),
+      std::vector<std::unique_ptr<ast::ExpressionNode>>{
 	
       });
 
   function_call->arguments.push_back(
-      std::make_unique<ast::StringConstantExpression>(
+      std::make_unique<ast::StringConstantExpressionNode>(
 	"hello"
       )
   );
 
-  auto block = std::make_unique<ast::Block>(
-      std::vector<std::unique_ptr<ast::Statement>>{});
+  auto block = std::make_unique<ast::BlockNode>(
+      std::vector<std::unique_ptr<ast::StatementNode>>{});
   block->statements.push_back(
-      std::make_unique<ast::ExpressionStatement>(std::move(function_call)));
+      std::make_unique<ast::ExpressionStatementNode>(std::move(function_call)));
 
-  auto expected_program = std::make_unique<ast::Program>(
-      std::vector<std::unique_ptr<ast::TopLevelDeclaration>>{});
+  auto expected_program = std::make_unique<ast::ProgramNode>(
+      std::vector<std::unique_ptr<ast::TopLevelDeclarationNode>>{});
 
-  expected_program->declarations.push_back(std::make_unique<ast::BindingDeclaration>(
-      std::make_unique<ast::Identifier>("main"),
-      std::make_unique<ast::FunctionDefinition>(
-          std::vector<std::unique_ptr<ast::FunctionDefinitionArgument>>{},
-          std::optional{std::make_unique<ast::Type>("Unit")},
+  expected_program->declarations.push_back(std::make_unique<ast::BindingDeclarationNode>(
+      std::make_unique<ast::IdentifierNode>("main"),
+      std::make_unique<ast::FunctionDefinitionNode>(
+          std::vector<std::unique_ptr<ast::FunctionDefinitionArgumentNode>>{},
+          std::optional{std::make_unique<ast::TypeNode>("Unit")},
           std::move(block))));
 
   test.AssertEq(static_cast<ast::Node&>(*program), *expected_program, "Expected programs to match");

@@ -1,0 +1,9 @@
+f = fn(): I32 {
+  return 10I32
+}
+
+main = fn(): Unit {
+  printf("Hello %c %d\n", 65I8, 30)
+  printf("There %d\n", 20)
+}
+

@@ -1,120 +1,110 @@
 #include "parse.hpp"
 #include <memory>
 
+#include <algorithm>
+#include <ostream>
 #include <print>
 #include <ranges>
 #include <unordered_map>
 #include <vector>
-#include <ostream>
 
 namespace kl {
 namespace ast {
 
-static std::unordered_map<std::string, BuiltinType> builtin_type_map {
-  { "Unit", BuiltinType::Unit },
-};
+TypeNode::TypeNode(std::string name) : Node{NodeType::Type}, name{name} {}
 
-std::optional<BuiltinType> Type::get_builtin_type(const std::string& s) {
-  auto it = builtin_type_map.find(s);
-  if (it != builtin_type_map.end()) {
-    return it->second;
-  }
-  return std::nullopt;
-}
+Node::Node(NodeType type) : type{type} {}
 
-Type::Type(std::string name) : Node{Node::Type::Type} {
-  auto builtin = get_builtin_type(name);
-  if (builtin.has_value()) {
-    this->name = builtin.value();
-  } else {
-    this->name = name;
-  }
-}
-
-Node::Node(Type type) : type{type} {}
-
-BindingDeclaration::BindingDeclaration(std::unique_ptr<Identifier> identifier,
-                                       std::unique_ptr<Binding> &&binding)
-    : TopLevelDeclaration{Node::Type::BindingDeclaration},
+BindingDeclarationNode::BindingDeclarationNode(
+    std::unique_ptr<IdentifierNode> identifier,
+    std::unique_ptr<BindingNode> &&binding)
+    : TopLevelDeclarationNode{NodeType::BindingDeclaration},
       identifier{std::move(identifier)}, binding{std::move(binding)} {}
 
-BindingDeclaration::~BindingDeclaration() = default;
+BindingDeclarationNode::~BindingDeclarationNode() = default;
 
-Program::Program(
-    std::vector<std::unique_ptr<TopLevelDeclaration>> &&declarations)
-    : Node{Node::Type::Program}, declarations{std::move(declarations)} {}
+ProgramNode::ProgramNode(
+    std::vector<std::unique_ptr<TopLevelDeclarationNode>> &&declarations)
+    : Node{NodeType::Program}, declarations{std::move(declarations)} {}
 
-FunctionDefinitionArgument::FunctionDefinitionArgument(
-    std::unique_ptr<Identifier> &&identifier, std::unique_ptr<ast::Type> &&type)
-    : Node{Node::Type::FunctionDefinitionArgument},
+FunctionDefinitionArgumentNode::FunctionDefinitionArgumentNode(
+    std::unique_ptr<IdentifierNode> &&identifier,
+    std::unique_ptr<ast::TypeNode> &&type)
+    : Node{NodeType::FunctionDefinitionArgument},
       identifier{std::move(identifier)}, argument_type{std::move(type)} {}
 
-FunctionDefinition::FunctionDefinition(
-    std::vector<std::unique_ptr<FunctionDefinitionArgument>> &&arguments,
-    std::optional<std::unique_ptr<ast::Type>> &&return_type,
-    std::unique_ptr<Block> &&block)
-    : Binding{Node::Type::FunctionDefinition}, arguments{std::move(arguments)},
-      return_type{std::move(return_type)}, block{std::move(block)} {}
+FunctionDefinitionNode::FunctionDefinitionNode(
+    std::vector<std::unique_ptr<FunctionDefinitionArgumentNode>> &&arguments,
+    std::optional<std::unique_ptr<ast::TypeNode>> &&return_type,
+    std::unique_ptr<BlockNode> &&block)
+    : BindingNode{NodeType::FunctionDefinition},
+      arguments{std::move(arguments)}, return_type{std::move(return_type)},
+      block{std::move(block)} {}
 
-Block::Block(std::vector<std::unique_ptr<Statement>> &&statements)
-    : Node{Node::Type::Block}, statements{std::move(statements)} {}
+BlockNode::BlockNode(std::vector<std::unique_ptr<StatementNode>> &&statements)
+    : Node{NodeType::Block}, statements{std::move(statements)} {}
 
-Identifier::Identifier(std::string name)
-    : Node{Node::Type::Identifier}, name{name} {}
+IdentifierNode::IdentifierNode(std::string name)
+    : Node{NodeType::Identifier}, name{name} {}
 
-ExpressionStatement::ExpressionStatement(
-    std::unique_ptr<Expression> &&expression)
-    : Statement{Node::Type::ExpressionStatement},
+ExpressionStatementNode::ExpressionStatementNode(
+    std::unique_ptr<ExpressionNode> &&expression)
+    : StatementNode{NodeType::ExpressionStatement},
       expression{std::move(expression)} {}
 
-FunctionCallExpression::FunctionCallExpression(
-    std::unique_ptr<Expression> &&function,
-    std::vector<std::unique_ptr<Expression>> &&args)
-    : Expression{Node::Type::FunctionCallExpression},
+FunctionCallExpressionNode::FunctionCallExpressionNode(
+    std::unique_ptr<ExpressionNode> &&function,
+    std::vector<std::unique_ptr<ExpressionNode>> &&args)
+    : ExpressionNode{NodeType::FunctionCallExpression},
       function{std::move(function)}, arguments{std::move(args)} {}
 
-UnaryOperatorExpression::UnaryOperatorExpression(
-    UnaryOperator op, std::unique_ptr<Expression> &&expr)
-    : Expression{Node::Type::UnaryOperatorExpression}, op{op},
+UnaryOperatorExpressionNode::UnaryOperatorExpressionNode(
+    UnaryOperator op, std::unique_ptr<ExpressionNode> &&expr)
+    : ExpressionNode{NodeType::UnaryOperatorExpression}, op{op},
       expression{std::move(expr)} {}
 
-BinaryOperatorExpression::BinaryOperatorExpression(
-    BinaryOperator op, std::unique_ptr<Expression> &&left,
-    std::unique_ptr<Expression> &&right)
-    : Expression{Node::Type::BinaryOperatorExpression}, op{op},
+BinaryOperatorExpressionNode::BinaryOperatorExpressionNode(
+    BinaryOperator op, std::unique_ptr<ExpressionNode> &&left,
+    std::unique_ptr<ExpressionNode> &&right)
+    : ExpressionNode{NodeType::BinaryOperatorExpression}, op{op},
       left{std::move(left)}, right{std::move(right)} {}
 
-IdentifierExpression::IdentifierExpression(
-    std::unique_ptr<Identifier> &&identifier)
-    : Expression{Node::Type::IdentifierExpression},
+IdentifierExpressionNode::IdentifierExpressionNode(
+    std::unique_ptr<IdentifierNode> &&identifier)
+    : ExpressionNode{NodeType::IdentifierExpression},
       identifier{std::move(identifier)} {}
 
-FloatConstantExpression::FloatConstantExpression(std::string value)
-    // : value{llvm::APFloatBase::IEEEdouble(), value} {}
-    : ConstantExpression{Node::Type::FloatConstantExpression}, value{value} {}
+FloatConstantExpressionNode::FloatConstantExpressionNode(
+    std::string value, std::unique_ptr<TypeNode> &&type)
+    : ConstantExpressionNode{NodeType::FloatConstantExpression}, value{value},
+      suffix{std::move(type)} {}
 
-IntegerConstantExpression::IntegerConstantExpression(std::string value)
-    // : value{llvm::APInt::getBitsNeeded(value, 10), value, 10} {}
-    : ConstantExpression{Node::Type::IntegerConstantExpression}, value{value} {}
+IntegerConstantExpressionNode::IntegerConstantExpressionNode(
+    std::uint64_t value, std::unique_ptr<TypeNode> &&type)
+    : ConstantExpressionNode{NodeType::IntegerConstantExpression}, value{value},
+      suffix{std::move(type)} {}
 
-StringConstantExpression::StringConstantExpression(std::string value)
-    : ConstantExpression{Node::Type::StringConstantExpression}, value{value} {}
+StringConstantExpressionNode::StringConstantExpressionNode(std::string value)
+    : ConstantExpressionNode{NodeType::StringConstantExpression}, value{value} {
+}
+
+ReturnStatementNode::ReturnStatementNode(
+    std::optional<std::unique_ptr<ExpressionNode>> &&expr)
+    : StatementNode{NodeType::ReturnStatement}, expression{std::move(expr)} {}
 
 /** FORMATTING **/
 
-std::string Type::format(std::size_t indent) const {
-  return std::visit([indent](const auto& v) {
-    return std::format("{}{}", make_indent(indent), v);
-  }, name);
+std::string TypeNode::format(std::size_t indent) const {
+  return std::format("{}{}", make_indent(indent), name);
 };
 
-std::string BindingDeclaration::format(std::size_t indent) const {
+std::string BindingDeclarationNode::format(std::size_t indent) const {
   return std::format("{}{} = {}", make_indent(indent),
                      identifier ? identifier->format(0) : "<nullptr>",
                      binding ? binding->format(0) : "<nullptr>");
 };
 
-std::string Program::format(std::size_t indent) const {
+std::string ProgramNode::format(std::size_t indent) const {
   return declarations | std::views::transform([indent](const auto &decl) {
            return decl->format(indent);
          }) |
@@ -122,17 +112,17 @@ std::string Program::format(std::size_t indent) const {
          std::ranges::to<std::string>();
 }
 
-std::string FunctionDefinitionArgument::format(std::size_t indent) const {
+std::string FunctionDefinitionArgumentNode::format(std::size_t indent) const {
   return std::format("{}{}: {}", make_indent(indent),
                      identifier ? identifier->format(0) : "<nullptr>",
                      argument_type ? argument_type->format(0) : "<nullptr>");
 }
 
-std::string Identifier::format(std::size_t indent) const {
+std::string IdentifierNode::format(std::size_t indent) const {
   return make_indent(indent) + name;
 }
 
-std::string FunctionDefinition::format(std::size_t indent) const {
+std::string FunctionDefinitionNode::format(std::size_t indent) const {
   return std::format(
       "{}fn({}){} {}", make_indent(indent),
       arguments | std::views::transform([](const auto &arg) {
@@ -148,7 +138,7 @@ std::string FunctionDefinition::format(std::size_t indent) const {
   );
 }
 
-std::string Block::format(std::size_t indent) const {
+std::string BlockNode::format(std::size_t indent) const {
   if (statements.size() == 0) {
     return make_indent(indent) + "{}";
   }
@@ -160,11 +150,11 @@ std::string Block::format(std::size_t indent) const {
           std::ranges::to<std::string>());
 }
 
-std::string ExpressionStatement::format(std::size_t indent) const {
+std::string ExpressionStatementNode::format(std::size_t indent) const {
   return expression ? expression->format(indent) : "<nullptr>";
 }
 
-std::string FunctionCallExpression::format(std::size_t indent) const {
+std::string FunctionCallExpressionNode::format(std::size_t indent) const {
   return std::format(
       "{}{}({})", make_indent(indent),
       function ? function->format(0) : "<nullptr>",
@@ -186,38 +176,44 @@ std::unordered_map<BinaryOperator, const char *> binary_operator_map{
     {BinaryOperator::Divide, "/"},
 };
 
-std::string UnaryOperatorExpression::format(std::size_t indent) const {
+std::string UnaryOperatorExpressionNode::format(std::size_t indent) const {
   return std::format("{}{}{}", make_indent(indent), unary_operator_map.at(op),
                      expression ? expression->format(0) : "<nullptr>");
 }
 
-std::string BinaryOperatorExpression::format(std::size_t indent) const {
+std::string BinaryOperatorExpressionNode::format(std::size_t indent) const {
 
   return std::format(
       "{}({}{}{})", make_indent(indent), left ? left->format(0) : "<nullptr>",
       binary_operator_map.at(op), right ? right->format(0) : "<nullptr>");
 }
 
-std::string IdentifierExpression::format(std::size_t indent) const {
+std::string IdentifierExpressionNode::format(std::size_t indent) const {
   return identifier ? identifier->format(indent) : "<nullptr>";
 }
 
-std::string FloatConstantExpression::format(std::size_t indent) const {
-  // llvm::SmallString<32> str;
-  // value.toString(str);
-  // return std::format("{}{}", make_indent(indent), str.c_str());
-  return "TMPFLOAT";
+std::string FloatConstantExpressionNode::format(std::size_t indent) const {
+  return std::format("{}{}{}", make_indent(indent), value,
+                     suffix ? suffix->format(0) : "");
 }
 
-std::string IntegerConstantExpression::format(std::size_t indent) const {
-  // llvm::SmallString<32> str;
-  // value.toString(str, 10, true);
-  // return std::format("{}{}", make_indent(indent), str.c_str());
-  return "TMPINT";
+std::string IntegerConstantExpressionNode::format(std::size_t indent) const {
+  return std::format("{}{}{}", make_indent(indent), value,
+                     suffix ? suffix->format(0) : "");
 }
 
-std::string StringConstantExpression::format(std::size_t indent) const {
+std::string StringConstantExpressionNode::format(std::size_t indent) const {
   return std::format("{}\"{}\"", make_indent(indent), value);
+}
+
+std::string ReturnStatementNode::format(std::size_t indent) const {
+  return std::format(
+      "{}return{}", make_indent(indent),
+      expression.has_value()
+          ? expression.value()
+                ? std::format(" {}", expression.value()->format(0))
+                : "<nullptr>"
+          : "");
 }
 
 /** OPERATOR== */
@@ -242,76 +238,80 @@ std::string StringConstantExpression::format(std::size_t indent) const {
     return KL_AST_SUBNODE_EQ(a, b);                                            \
   })
 
-KL_AST_OPERATOR_EQ(StringConstantExpression)
+KL_AST_OPERATOR_EQ(StringConstantExpressionNode)
 return value == other.value;
 }
 
-KL_AST_OPERATOR_EQ(IntegerConstantExpression)
+KL_AST_OPERATOR_EQ(IntegerConstantExpressionNode)
 return value == other.value;
 }
 
-KL_AST_OPERATOR_EQ(FloatConstantExpression)
+KL_AST_OPERATOR_EQ(FloatConstantExpressionNode)
 return value == other.value;
 }
 
-KL_AST_OPERATOR_EQ(IdentifierExpression)
+KL_AST_OPERATOR_EQ(IdentifierExpressionNode)
 return KL_AST_SUBNODE_EQ(identifier, other.identifier);
 }
 
-KL_AST_OPERATOR_EQ(BinaryOperatorExpression)
+KL_AST_OPERATOR_EQ(BinaryOperatorExpressionNode)
 return op == other.op && KL_AST_SUBNODE_EQ(left, other.left) &&
        KL_AST_SUBNODE_EQ(right, other.right);
 }
 
-KL_AST_OPERATOR_EQ(UnaryOperatorExpression)
+KL_AST_OPERATOR_EQ(UnaryOperatorExpressionNode)
 return op == other.op && KL_AST_SUBNODE_EQ(expression, other.expression);
 }
 
-KL_AST_OPERATOR_EQ(FunctionCallExpression)
+KL_AST_OPERATOR_EQ(FunctionCallExpressionNode)
 return KL_AST_SUBNODE_EQ(function, other.function) &&
        KL_AST_SUBNODE_RANGE_EQ(arguments, other.arguments);
 }
 
-KL_AST_OPERATOR_EQ(ExpressionStatement)
+KL_AST_OPERATOR_EQ(ExpressionStatementNode)
 return KL_AST_SUBNODE_EQ(expression, other.expression);
 }
 
-KL_AST_OPERATOR_EQ(Block)
+KL_AST_OPERATOR_EQ(BlockNode)
 return KL_AST_SUBNODE_RANGE_EQ(statements, other.statements);
 }
 
-KL_AST_OPERATOR_EQ(FunctionDefinition)
+KL_AST_OPERATOR_EQ(FunctionDefinitionNode)
 return KL_AST_SUBNODE_RANGE_EQ(arguments, other.arguments) &&
        KL_AST_SUBNODE_OPT_EQ(return_type, other.return_type) &&
        KL_AST_SUBNODE_EQ(block, other.block);
 }
 
-KL_AST_OPERATOR_EQ(Identifier)
+KL_AST_OPERATOR_EQ(IdentifierNode)
 return name == other.name;
 }
 
-KL_AST_OPERATOR_EQ(FunctionDefinitionArgument)
+KL_AST_OPERATOR_EQ(FunctionDefinitionArgumentNode)
 return KL_AST_SUBNODE_EQ(identifier, other.identifier) &&
        KL_AST_SUBNODE_EQ(argument_type, other.argument_type);
 }
 
-KL_AST_OPERATOR_EQ(Program)
-  return KL_AST_SUBNODE_RANGE_EQ(declarations, other.declarations);
+KL_AST_OPERATOR_EQ(ProgramNode)
+return KL_AST_SUBNODE_RANGE_EQ(declarations, other.declarations);
 }
 
-KL_AST_OPERATOR_EQ(Type)
-  return name == other.name;
+KL_AST_OPERATOR_EQ(TypeNode)
+return name == other.name;
 }
 
-KL_AST_OPERATOR_EQ(BindingDeclaration)
+KL_AST_OPERATOR_EQ(BindingDeclarationNode)
 return KL_AST_SUBNODE_EQ(identifier, other.identifier) &&
        KL_AST_SUBNODE_EQ(binding, other.binding);
+}
+
+KL_AST_OPERATOR_EQ(ReturnStatementNode)
+return KL_AST_SUBNODE_OPT_EQ(expression, other.expression);
 }
 
 } // namespace ast
 } // namespace kl
 
-std::ostream& operator<<(std::ostream& os, const kl::ast::Node& node) {
+std::ostream &operator<<(std::ostream &os, const kl::ast::Node &node) {
   std::print(os, "{}", node.format(0));
   return os;
 }

@@ -9,7 +9,7 @@
 TEST_CASE("BasicCodegen", BasicCodegen) {
   using namespace kl;
   using namespace kl::codegen;
-  auto llvm_context = std::make_unique<llvm::LLVMContext>();
+  auto llvm_context = std::make_shared<llvm::LLVMContext>();
 
   auto result = "main = fn(): Unit { puts(\"hello\") }"
     | pipeline::LexStage{}
@@ -24,5 +24,5 @@ TEST_CASE("BasicCodegen", BasicCodegen) {
 
   auto module = std::move(result.value());
 
-  module->print(llvm::errs(), nullptr);
+  module.module->print(llvm::errs(), nullptr);
 }

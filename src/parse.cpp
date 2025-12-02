@@ -6,6 +6,7 @@
 #include <expected>
 #include <format>
 #include <span>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -17,14 +18,12 @@
 namespace kl {
 namespace ast {
 
-
-
 struct Context {
   std::span<lex::Token> tokens;
 
-  std::vector<Node::Type> node_stack;
+  std::vector<NodeType> node_stack;
 
-  void begin_node(Node::Type type) { node_stack.push_back(type); }
+  void begin_node(NodeType type) { node_stack.push_back(type); }
   void end_node() { node_stack.pop_back(); }
 
   bool is_end() const {
@@ -159,46 +158,46 @@ struct Context {
              std::convertible_to<std::ranges::range_value_t<R>,
                                  lex::Token::Type>
   [[noreturn]] void throw_unexpected(R range) {
-    std::string list = range | std::views::transform([](const auto &type) {
-                       return std::format("{}",
-                                          static_cast<lex::Token::Type>(type));
-                     }) |
-                     std::views::join_with(std::string(", ")) |
-                     std::ranges::to<std::string>();
+    std::string list =
+        range | std::views::transform([](const auto &type) {
+          return std::format("{}", static_cast<lex::Token::Type>(type));
+        }) |
+        std::views::join_with(std::string(", ")) |
+        std::ranges::to<std::string>();
     throw_unexpected(std::format("{{ {} }}", list));
   }
 };
 
 struct NodeParseContext {
   Context &ctx;
-  NodeParseContext(Context &ctx, Node::Type type) : ctx{ctx} {
+  NodeParseContext(Context &ctx, NodeType type) : ctx{ctx} {
     ctx.begin_node(type);
   }
 
   ~NodeParseContext() { ctx.end_node(); }
 };
 
-std::unique_ptr<Identifier> parse_identifier(Context &ctx) {
-  NodeParseContext _{ctx, Node::Type::Identifier};
+std::unique_ptr<IdentifierNode> parse_identifier(Context &ctx) {
+  NodeParseContext _{ctx, NodeType::Identifier};
 
   auto token = ctx.eat_type_or_throw(lex::Token::Type::Identifier);
   auto identifier = token.value.value();
 
-  return std::make_unique<Identifier>(identifier);
+  return std::make_unique<IdentifierNode>(identifier);
 }
 
-std::unique_ptr<Type> parse_type(Context &ctx) {
-  NodeParseContext _{ctx, Node::Type::Type};
+std::unique_ptr<TypeNode> parse_type(Context &ctx) {
+  NodeParseContext _{ctx, NodeType::Type};
 
   auto token = ctx.eat_type_or_throw(lex::Token::Type::Type);
   auto type = token.value.value();
 
-  return std::make_unique<Type>(type);
+  return std::make_unique<TypeNode>(type);
 }
 
-std::unique_ptr<FunctionDefinitionArgument>
+std::unique_ptr<FunctionDefinitionArgumentNode>
 parse_function_definition_argument(Context &ctx) {
-  NodeParseContext _{ctx, Node::Type::FunctionDefinitionArgument};
+  NodeParseContext _{ctx, NodeType::FunctionDefinitionArgument};
 
   auto identifier = parse_identifier(ctx);
   ctx.eat_type_or_throw(lex::Token::Type::Colon);
@@ -206,8 +205,8 @@ parse_function_definition_argument(Context &ctx) {
   ctx.discard_whitespace();
   auto type = parse_type(ctx);
 
-  return std::make_unique<FunctionDefinitionArgument>(std::move(identifier),
-                                                      std::move(type));
+  return std::make_unique<FunctionDefinitionArgumentNode>(std::move(identifier),
+                                                          std::move(type));
 }
 
 static std::unordered_map<lex::Token::Type, BinaryOperator> add_infix_operators{
@@ -224,9 +223,51 @@ static std::unordered_map<lex::Token::Type, UnaryOperator> prefix_operator_map{
     {lex::Token::Type::Minus, UnaryOperator::Negative},
 };
 
-std::unique_ptr<Expression> parse_expression(Context &ctx);
+std::unique_ptr<ExpressionNode> parse_expression(Context &ctx);
 
-std::unique_ptr<Expression> parse_factor(Context &ctx) {
+std::unique_ptr<ExpressionNode> parse_integer(Context &ctx) {
+  auto token = ctx.eat();
+
+  std::uint64_t value_ull;
+  try {
+    value_ull = std::stoull(token.value.value());
+  } catch (const std::invalid_argument &e) {
+    throw ParseError{
+        token,
+        ctx.node_stack,
+        ParseError::Type::InvalidInteger,
+        std::format("stoull failed", e.what()),
+    };
+  } catch (const std::out_of_range &e) {
+    throw ParseError{
+        token,
+        ctx.node_stack,
+        ParseError::Type::IntegerOOB,
+        std::format("stoull failed", e.what()),
+    };
+  }
+
+  std::unique_ptr<TypeNode> suffix;
+  if (ctx.is(lex::Token::Type::Type)) {
+    suffix = parse_type(ctx);
+  }
+
+  return std::make_unique<IntegerConstantExpressionNode>(value_ull,
+                                                         std::move(suffix));
+}
+
+std::unique_ptr<ExpressionNode> parse_float(Context &ctx) {
+    auto token = ctx.eat();
+
+    std::unique_ptr<TypeNode> suffix;
+    if (ctx.is(lex::Token::Type::Type)) {
+      suffix = parse_type(ctx);
+    }
+    return std::make_unique<FloatConstantExpressionNode>(token.value.value(),
+                                                         std::move(suffix));
+}
+
+std::unique_ptr<ExpressionNode> parse_factor(Context &ctx) {
   if (ctx.eat_type_opt(lex::Token::Type::LParen)) {
     auto expr = parse_expression(ctx);
     ctx.eat_type_or_throw(lex::Token::Type::RParen);
@@ -235,27 +276,25 @@ std::unique_ptr<Expression> parse_factor(Context &ctx) {
 
   if (ctx.is(lex::Token::Type::Identifier)) {
     auto identifier = parse_identifier(ctx);
-    return std::make_unique<IdentifierExpression>(std::move(identifier));
+    return std::make_unique<IdentifierExpressionNode>(std::move(identifier));
   }
 
   if (ctx.is(lex::Token::Type::Float)) {
-    auto token = ctx.eat();
-    return std::make_unique<FloatConstantExpression>(token.value.value());
+    return parse_float(ctx);
   }
   if (ctx.is(lex::Token::Type::Integer)) {
-    auto token = ctx.eat();
-    return std::make_unique<IntegerConstantExpression>(token.value.value());
+    return parse_integer(ctx);
   }
   if (ctx.is(lex::Token::Type::String)) {
     auto token = ctx.eat();
-    return std::make_unique<StringConstantExpression>(token.value.value());
+    return std::make_unique<StringConstantExpressionNode>(token.value.value());
   }
   ctx.throw_unexpected();
 }
 
-std::vector<std::unique_ptr<Expression>>
+std::vector<std::unique_ptr<ExpressionNode>>
 parse_function_call_args(Context &ctx) {
-  std::vector<std::unique_ptr<Expression>> args;
+  std::vector<std::unique_ptr<ExpressionNode>> args;
 
   bool last = false;
   while (true) {
@@ -279,58 +318,54 @@ parse_function_call_args(Context &ctx) {
   return args;
 }
 
-std::unique_ptr<Expression> parse_postfix_expression(Context &ctx) {
+std::unique_ptr<ExpressionNode> parse_postfix_expression(Context &ctx) {
   auto factor = parse_factor(ctx);
   if (ctx.eat_type_opt(lex::Token::Type::LParen)) {
     auto args = parse_function_call_args(ctx);
     ctx.eat_type_or_throw(lex::Token::Type::RParen);
-    return std::make_unique<FunctionCallExpression>(std::move(factor),
-                                                    std::move(args));
+    return std::make_unique<FunctionCallExpressionNode>(std::move(factor),
+                                                        std::move(args));
   }
 
   return factor;
 }
 
-std::unique_ptr<Expression> parse_prefix_expression(Context &ctx) {
+std::unique_ptr<ExpressionNode> parse_prefix_expression(Context &ctx) {
   if (ctx.is_in(prefix_operator_map)) {
     auto token = ctx.eat();
     auto op = prefix_operator_map.at(token.type);
     auto expr = parse_prefix_expression(ctx);
-    return std::make_unique<UnaryOperatorExpression>(op, std::move(expr));
+    return std::make_unique<UnaryOperatorExpressionNode>(op, std::move(expr));
   }
   return parse_postfix_expression(ctx);
 }
 
-std::unique_ptr<Expression> parse_mul_expression(Context &ctx) {
+std::unique_ptr<ExpressionNode> parse_mul_expression(Context &ctx) {
   auto left = parse_prefix_expression(ctx);
   if (ctx.is_in(mul_infix_operators)) {
     auto token = ctx.eat();
     auto op = mul_infix_operators.at(token.type);
     auto right = parse_mul_expression(ctx);
-    return std::make_unique<BinaryOperatorExpression>(op, std::move(left),
-                                                      std::move(right));
+    return std::make_unique<BinaryOperatorExpressionNode>(op, std::move(left),
+                                                          std::move(right));
   }
   return left;
 }
 
-std::unique_ptr<Expression> parse_add_expression(Context &ctx) {
+std::unique_ptr<ExpressionNode> parse_add_expression(Context &ctx) {
   auto left = parse_prefix_expression(ctx);
   if (ctx.is_in(add_infix_operators)) {
     auto token = ctx.eat();
     auto op = add_infix_operators.at(token.type);
     auto right = parse_add_expression(ctx);
-    return std::make_unique<BinaryOperatorExpression>(op, std::move(left),
-                                                      std::move(right));
+    return std::make_unique<BinaryOperatorExpressionNode>(op, std::move(left),
+                                                          std::move(right));
   }
   return left;
 }
 
-std::unique_ptr<Expression> parse_expression(Context &ctx) {
+std::unique_ptr<ExpressionNode> parse_expression(Context &ctx) {
   return parse_add_expression(ctx);
-}
-
-std::unique_ptr<Statement> parse_statement(Context &ctx) {
-  return std::make_unique<ExpressionStatement>(parse_expression(ctx));
 }
 
 std::unordered_set<lex::Token::Type> statement_terminators{
@@ -338,10 +373,27 @@ std::unordered_set<lex::Token::Type> statement_terminators{
     lex::Token::Type::Semicolon,
 };
 
-std::unique_ptr<Block> parse_block(Context &ctx) {
-  NodeParseContext _{ctx, Node::Type::Block};
+std::unique_ptr<ReturnStatementNode> parse_return_statement(Context &ctx) {
+  ctx.eat();
+  ctx.discard_whitespace();
+  std::optional<std::unique_ptr<ExpressionNode>> expression;
+  if (!ctx.is_in(statement_terminators) && !ctx.is(lex::Token::Type::RBrace)) {
+    expression = parse_expression(ctx);
+  }
+  return std::make_unique<ReturnStatementNode>(std::move(expression));
+}
 
-  std::vector<std::unique_ptr<Statement>> statements;
+std::unique_ptr<StatementNode> parse_statement(Context &ctx) {
+  if (ctx.is(lex::Token::Type::Return)) {
+    return parse_return_statement(ctx);
+  }
+  return std::make_unique<ExpressionStatementNode>(parse_expression(ctx));
+}
+
+std::unique_ptr<BlockNode> parse_block(Context &ctx) {
+  NodeParseContext _{ctx, NodeType::Block};
+
+  std::vector<std::unique_ptr<StatementNode>> statements;
 
   ctx.eat_type_or_throw(lex::Token::Type::LBrace);
 
@@ -350,9 +402,9 @@ std::unique_ptr<Block> parse_block(Context &ctx) {
     ctx.discard_whitespace_and_newlines();
     if (ctx.is(lex::Token::Type::RBrace)) {
       break;
-    }
-    else if (last) {
-      auto expected = statement_terminators | std::ranges::to<std::vector<lex::Token::Type>>();
+    } else if (last) {
+      auto expected = statement_terminators |
+                      std::ranges::to<std::vector<lex::Token::Type>>();
       expected.push_back(lex::Token::Type::RBrace);
       ctx.throw_unexpected(expected);
     }
@@ -361,21 +413,23 @@ std::unique_ptr<Block> parse_block(Context &ctx) {
     ctx.discard_whitespace();
     if (!ctx.is_in(statement_terminators)) {
       last = true;
+    } else {
+      ctx.eat();
     }
   }
 
   ctx.eat_type_or_throw(lex::Token::Type::RBrace);
 
-  return std::make_unique<Block>(std::move(statements));
+  return std::make_unique<BlockNode>(std::move(statements));
 }
 
-std::unique_ptr<FunctionDefinition> parse_function_definition(Context &ctx) {
-  NodeParseContext _{ctx, Node::Type::FunctionDefinition};
+std::unique_ptr<FunctionDefinitionNode> parse_function_definition(Context &ctx) {
+  NodeParseContext _{ctx, NodeType::FunctionDefinition};
 
   ctx.eat_type_or_throw(lex::Token::Type::Fn);
   ctx.eat_type_or_throw(lex::Token::Type::LParen);
 
-  std::vector<std::unique_ptr<FunctionDefinitionArgument>> arguments;
+  std::vector<std::unique_ptr<FunctionDefinitionArgumentNode>> arguments;
 
   bool last = false;
   while (true) {
@@ -407,7 +461,7 @@ std::unique_ptr<FunctionDefinition> parse_function_definition(Context &ctx) {
     }
   }
 
-  std::optional<std::unique_ptr<ast::Type>> return_type;
+  std::optional<std::unique_ptr<ast::TypeNode>> return_type;
   // return type
   if (ctx.is(lex::Token::Type::Colon)) {
     ctx.eat();
@@ -418,15 +472,15 @@ std::unique_ptr<FunctionDefinition> parse_function_definition(Context &ctx) {
   ctx.discard_whitespace();
   auto block = parse_block(ctx);
 
-  return std::make_unique<FunctionDefinition>(FunctionDefinition{
+  return std::make_unique<FunctionDefinitionNode>(FunctionDefinitionNode{
       std::move(arguments),
       std::move(return_type),
       std::move(block),
   });
 }
 
-std::unique_ptr<Binding> parse_binding(Context &ctx) {
-  NodeParseContext _{ctx, Node::Type::Binding};
+std::unique_ptr<BindingNode> parse_binding(Context &ctx) {
+  NodeParseContext _{ctx, NodeType::Binding};
 
   auto token = ctx.peek_or_throw();
   if (token.type == lex::Token::Type::Fn) {
@@ -435,8 +489,9 @@ std::unique_ptr<Binding> parse_binding(Context &ctx) {
   throw "Not implemented";
 }
 
-std::unique_ptr<BindingDeclaration> parse_binding_declaration(Context &ctx) {
-  NodeParseContext _{ctx, Node::Type::BindingDeclaration};
+std::unique_ptr<BindingDeclarationNode>
+parse_binding_declaration(Context &ctx) {
+  NodeParseContext _{ctx, NodeType::BindingDeclaration};
 
   auto identifier = parse_identifier(ctx);
   ctx.discard_whitespace();
@@ -444,26 +499,29 @@ std::unique_ptr<BindingDeclaration> parse_binding_declaration(Context &ctx) {
   ctx.discard_whitespace();
   auto binding = parse_binding(ctx);
 
-  return std::make_unique<BindingDeclaration>(std::move(identifier),
-                                              std::move(binding));
+  return std::make_unique<BindingDeclarationNode>(std::move(identifier),
+                                                  std::move(binding));
 }
 
-std::unique_ptr<TopLevelDeclaration> parse_top_level_declaration(Context &ctx) {
-  NodeParseContext _{ctx, Node::Type::TopLevelDeclaration};
+std::unique_ptr<TopLevelDeclarationNode>
+parse_top_level_declaration(Context &ctx) {
+  NodeParseContext _{ctx, NodeType::TopLevelDeclaration};
 
   ctx.discard_whitespace_and_newlines();
   auto binding_declaration = parse_binding_declaration(ctx);
   return std::move(binding_declaration);
 }
 
-std::unique_ptr<Program> parse_program(Context &ctx) {
-  NodeParseContext _{ctx, Node::Type::Program};
+std::unique_ptr<ProgramNode> parse_program(Context &ctx) {
+  NodeParseContext _{ctx, NodeType::Program};
 
-  std::vector<std::unique_ptr<TopLevelDeclaration>> declarations;
+  std::vector<std::unique_ptr<TopLevelDeclarationNode>> declarations;
+  ctx.discard_whitespace(true);
   while (!ctx.is_end()) {
     declarations.push_back(parse_top_level_declaration(ctx));
+    ctx.discard_whitespace(true);
   }
-  return std::make_unique<Program>(std::move(declarations));
+  return std::make_unique<ProgramNode>(std::move(declarations));
 }
 
 ParseResult<> try_parse(std::vector<lex::Token> tokens) {

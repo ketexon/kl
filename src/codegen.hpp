@@ -13,24 +13,46 @@ struct CodegenError {
   enum class Type {
     TypeError,
     UndeclaredIdentifier,
+    VerificationError,
+    ReturnTypeMismatch,
+    InvalidIntegerSuffix,
+    InvalidIntegerLiteral,
+    IntegerOutOfBounds,
   };
+
   Type type;
   std::string message;
 
-  static const char* type_to_string(Type t) {
-    switch(t) {
-    case Type::TypeError: return "TypeError";
-    case Type::UndeclaredIdentifier:return "UndecelaredIdentifier";
+  static const char *type_to_string(Type t) {
+    switch (t) {
+    case Type::TypeError:
+      return "TypeError";
+    case Type::UndeclaredIdentifier:
+      return "UndecelaredIdentifier";
+    case Type::VerificationError:
+      return "VerificationError";
+    case Type::ReturnTypeMismatch:
+      return "ReturnTypeMismatch";
+    case Type::InvalidIntegerSuffix:
+      return "InvalidIntegerSuffix";
+    case Type::InvalidIntegerLiteral:
+      return "InvalidIntegerLiteral";
+    case Type::IntegerOutOfBounds:
+      return "IntegerOutOfBounds";
     }
     std::unreachable();
   }
 };
 
-using CodegenResult =
-    std::expected<std::unique_ptr<llvm::Module>, CodegenError>;
+struct Module {
+  std::shared_ptr<llvm::LLVMContext> llvm_context;
+  std::unique_ptr<llvm::Module> module;
+};
 
-CodegenResult try_codegen(std::unique_ptr<llvm::LLVMContext> &,
-                          const std::unique_ptr<ast::Program> &program);
+using CodegenResult = std::expected<Module, CodegenError>;
+
+CodegenResult try_codegen(std::shared_ptr<llvm::LLVMContext>,
+                          const std::unique_ptr<ast::ProgramNode> &program);
 
 } // namespace codegen
 } // namespace kl
@@ -40,6 +62,16 @@ struct std::formatter<kl::codegen::CodegenError::Type>
     : std::formatter<std::string> {
   auto format(const kl::codegen::CodegenError::Type &err,
               std::format_context &ctx) const {
-    return std::formatter<std::string>::format(kl::codegen::CodegenError::type_to_string(err), ctx);
+    return std::formatter<std::string>::format(
+        kl::codegen::CodegenError::type_to_string(err), ctx);
+  }
+};
+
+template <>
+struct std::formatter<kl::codegen::CodegenError> : std::formatter<std::string> {
+  auto format(const kl::codegen::CodegenError &err,
+              std::format_context &ctx) const {
+    return std::formatter<std::string>::format(
+        std::format("CodegenError({}) \"{}\"", err.type, err.message), ctx);
   }
 };

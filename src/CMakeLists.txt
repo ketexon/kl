@@ -1,7 +1,17 @@
+include(FetchContent)
+FetchContent_Declare(
+  argparse
+  URL https://github.com/p-ranav/argparse/archive/refs/tags/v3.2.zip
+)
+
+FetchContent_MakeAvailable(argparse)
+
 add_library(
   kl_compiler_core
   lex.hpp lex.cpp
   parse.hpp parse.cpp parse_node.cpp
+  types.hpp types.cpp
+  typecheck.hpp typecheck.cpp
   codegen.hpp codegen.cpp
 )
 
@@ -39,12 +49,19 @@ target_compile_definitions(
   ${LLVM_DEFINITIONS_LIST}
 )
 
-llvm_config(kl_compiler_core USE_SHARED support core irreader)
+set(llvm_config_flags "")
+
+if (WIN32)
+else()
+  list(APPEND llvm_config_flags "USE_SHARED")
+endif()
+
+llvm_config(kl_compiler_core ${llvm_config_flags} support core irreader)
 
 message("${LLVM_LIBS}")
 
 target_link_libraries(
-  kl_compiler
+  kl_compiler_core
   PUBLIC
   ${LLVM_LIBS}
 )
@@ -53,4 +70,5 @@ target_link_libraries(
   kl_compiler
   PRIVATE
   kl_compiler_core
+  argparse::argparse
 )

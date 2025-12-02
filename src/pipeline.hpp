@@ -9,6 +9,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <string_view>
 #include <type_traits>
+#include <variant>
 
 #include <llvm/IR/Module.h>
 
@@ -29,18 +30,24 @@ struct LexStage
 };
 
 struct ParseStage
-    : Stage<std::vector<kl::lex::Token>, std::unique_ptr<kl::ast::Program>,
+    : Stage<std::vector<kl::lex::Token>, std::unique_ptr<kl::ast::ProgramNode>,
             kl::ast::ParseError> {
   Result pipe(Input input) override { return kl::ast::try_parse(input); }
 };
 
 struct CodegenStage
-    : Stage<const std::unique_ptr<ast::Program> &,
-            std::unique_ptr<llvm::Module>, kl::codegen::CodegenError> {
-  std::unique_ptr<llvm::LLVMContext> &llvm_context;
-  CodegenStage(std::unique_ptr<llvm::LLVMContext> &llvm_context)
+    : Stage<const std::unique_ptr<ast::ProgramNode> &,
+            codegen::Module, kl::codegen::CodegenError> {
+  std::shared_ptr<llvm::LLVMContext> llvm_context;
+
+  CodegenStage() : llvm_context{std::make_shared<llvm::LLVMContext>()} {}
+
+  CodegenStage(std::shared_ptr<llvm::LLVMContext> llvm_context)
       : llvm_context{llvm_context} {}
-  Result pipe(Input input) override { return codegen::try_codegen(llvm_context, input); }
+
+  Result pipe(Input input) override {
+    return codegen::try_codegen(llvm_context, input);
+  }
 };
 
 } // namespace pipeline

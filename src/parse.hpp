@@ -1,8 +1,9 @@
 #pragma once
 
-#include <format>
 #include <lex.hpp>
+#include <types.hpp>
 
+#include <format>
 #include <expected>
 #include <memory>
 #include <optional>
@@ -13,49 +14,107 @@
 namespace kl {
 namespace ast {
 
-struct Binding;
-struct BindingDeclaration;
+struct BindingNode;
+struct BindingDeclarationNode;
 struct Node;
-struct Program;
-struct Block;
-struct Statement;
-struct Identifier;
-struct TopLevelDeclaration;
-struct Type;
-struct FunctionDefinition;
-struct FunctionDefinitionArgument;
+struct ProgramNode;
+struct BlockNode;
+struct StatementNode;
+struct IdentifierNode;
+struct TopLevelDeclarationNode;
+struct TypeNode;
+struct FunctionDefinitionNode;
+struct FunctionDefinitionArgumentNode;
+
+enum class NodeType {
+  Binding,
+  IntegerConstantExpression,
+  FloatConstantExpression,
+  StringConstantExpression,
+  Block,
+  BindingDeclaration,
+  Node,
+  ExpressionStatement,
+  ReturnStatement,
+  Program,
+  FunctionCallExpression,
+  Identifier,
+  TopLevelDeclaration,
+  FunctionDefinition,
+  FunctionDefinitionArgument,
+
+  Type,
+
+  BinaryOperatorExpression,
+  IdentifierExpression,
+  UnaryOperatorExpression,
+};
+
+constexpr const char* node_type_to_string(NodeType t) {
+  switch(t) {
+  case NodeType::Binding: return "Binding";
+  case NodeType::IntegerConstantExpression: return "IntegerConstantExpression";
+  case NodeType::FloatConstantExpression: return "FloatConstantExpression";
+  case NodeType::StringConstantExpression: return "StringConstantExpression";
+  case NodeType::Block: return "Block";
+  case NodeType::BindingDeclaration: return "BindingDeclaration";
+  case NodeType::Node: return "Node";
+  case NodeType::ExpressionStatement: return "ExpressionStatement";
+  case NodeType::Program: return "Program";
+  case NodeType::FunctionCallExpression: return "FunctionCallExpression";
+  case NodeType::Identifier: return "Identifier";
+  case NodeType::TopLevelDeclaration: return "TopLevelDeclaration";
+  case NodeType::FunctionDefinition: return "FunctionDefinition";
+  case NodeType::FunctionDefinitionArgument: return "FunctionDefinitionArgument";
+  case NodeType::Type: return "Type";
+  case NodeType::BinaryOperatorExpression: return "BinaryOperatorExpression";
+  case NodeType::IdentifierExpression: return "IdentifierExpression";
+  case NodeType::UnaryOperatorExpression: return "UnaryOperatorExpression";
+  case NodeType::ReturnStatement: return "ReturnStatement";
+  }
+}
+
+struct TypecheckContext {
+  std::unique_ptr<types::TypeSystem> type_system;
+  std::unique_ptr<types::Scope> global_scope;
+  std::unique_ptr<types::Scope> function_scope;
+  std::unique_ptr<types::FunctionTypeInfo> function_type_info;
+
+  inline types::Scope* get_current_scope() const {
+    if (function_scope != nullptr) {
+      return function_scope.get();
+    }
+    else {
+      return global_scope.get();
+    }
+  }
+};
+
+struct TypecheckError {
+  enum class Type {
+
+  };
+  constexpr static const char* type_to_string(Type t) {
+    switch(t) {
+
+    }
+    std::unreachable();
+  }
+  Type type;
+  std::string message;
+};
 
 struct Node {
-  enum class Type {
-    Binding,
-    IntegerConstantExpression,
-    FloatConstantExpression,
-    StringConstantExpression,
-    Block,
-    BindingDeclaration,
-    Node,
-    ExpressionStatement,
-    Program,
-    FunctionCallExpression,
-    Identifier,
-    TopLevelDeclaration,
-    FunctionDefinition,
-    FunctionDefinitionArgument,
-    Type,
-    BinaryOperatorExpression,
-    IdentifierExpression,
-    UnaryOperatorExpression,
-  };
-
-  Node(Type type);
+  Node(NodeType type);
   virtual std::string format(std::size_t indent = 0) const {
     return make_indent(indent) + "<unknown_node>";
   };
 
-  Type type;
+  NodeType type;
 
   virtual ~Node() = default;
   virtual bool operator==(const Node& other) const = 0;
+  virtual void typecheck(ast::TypecheckContext&) {}
 
 protected:
   static inline std::string make_indent(std::size_t size) {
@@ -63,93 +122,92 @@ protected:
   }
 };
 
-enum class BuiltinType {
-  Unit,
-};
-
-struct Type : Node {
-  Type(std::string name);
+struct TypeNode : Node {
+  TypeNode(std::string name);
   std::string format(std::size_t indent) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
-  static std::optional<BuiltinType> get_builtin_type(const std::string&);
-  std::variant<BuiltinType, std::string> name;
-
-  template<typename T>
-  constexpr auto get() const {
-    return std::get<T>(name);
-  }
-
-  constexpr bool is_builtin() const {
-    return std::holds_alternative<BuiltinType>(name);
-  }
-
-  constexpr bool is_builtin(BuiltinType type) const {
-    return is_builtin() && get<BuiltinType>() == type;
-  }
+  std::string name;
+  std::unique_ptr<types::TypeInfo> type_info;
 };
 
-struct Identifier : Node {
-  Identifier(std::string name);
+struct IdentifierNode : Node {
+  IdentifierNode(std::string name);
   std::string format(std::size_t indent) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
   std::string name;
 };
 
-struct TopLevelDeclaration : Node {
+struct TopLevelDeclarationNode : Node {
 protected:
   using Node::Node;
 };
 
-struct BindingDeclaration : TopLevelDeclaration {
-  BindingDeclaration(std::unique_ptr<Identifier> identifier,
-                     std::unique_ptr<Binding> &&binding);
-  ~BindingDeclaration();
+struct BindingDeclarationNode : TopLevelDeclarationNode {
+  BindingDeclarationNode(std::unique_ptr<IdentifierNode> identifier,
+                     std::unique_ptr<BindingNode> &&binding);
+  ~BindingDeclarationNode();
   std::string format(std::size_t indent) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
-  std::unique_ptr<Identifier> identifier;
-  std::unique_ptr<Binding> binding;
+  std::unique_ptr<IdentifierNode> identifier;
+  std::unique_ptr<BindingNode> binding;
 };
 
-struct Program : Node {
-  Program(std::vector<std::unique_ptr<TopLevelDeclaration>> &&);
+struct ProgramNode : Node {
+  ProgramNode(std::vector<std::unique_ptr<TopLevelDeclarationNode>> &&);
   std::string format(std::size_t indent) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
-  std::vector<std::unique_ptr<TopLevelDeclaration>> declarations;
+  std::vector<std::unique_ptr<TopLevelDeclarationNode>> declarations;
 };
 
-struct Binding : Node {
+struct BindingNode : Node {
+  std::unique_ptr<types::TypeInfo> type_info;
 protected:
   using Node::Node;
 };
 
-struct Statement : Node {
+struct StatementNode : Node {
 protected:
   using Node::Node;
 };
 
-struct Expression : Binding {
+struct ExpressionNode : BindingNode {
 protected:
-  using Binding::Binding;
+  using BindingNode::BindingNode;
 };
 
-struct IdentifierExpression : Expression {
-  IdentifierExpression(std::unique_ptr<Identifier> &&);
+struct IdentifierExpressionNode : ExpressionNode {
+  IdentifierExpressionNode(std::unique_ptr<IdentifierNode> &&);
   std::string format(std::size_t indent) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
-  std::unique_ptr<Identifier> identifier;
+  std::unique_ptr<IdentifierNode> identifier;
 };
 
-struct ExpressionStatement : Statement {
-  ExpressionStatement(std::unique_ptr<Expression> &&);
+struct ExpressionStatementNode : StatementNode {
+  ExpressionStatementNode(std::unique_ptr<ExpressionNode> &&);
   std::string format(std::size_t) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
-  std::unique_ptr<Expression> expression;
+  std::unique_ptr<ExpressionNode> expression;
+};
+
+struct ReturnStatementNode : StatementNode {
+  ReturnStatementNode(std::optional<std::unique_ptr<ExpressionNode>> &&);
+  std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
+
+  std::optional<std::unique_ptr<ExpressionNode>> expression;
 };
 
 enum class BinaryOperator {
@@ -159,16 +217,25 @@ enum class BinaryOperator {
   Divide,
 };
 
-struct BinaryOperatorExpression : Expression {
-  BinaryOperatorExpression(BinaryOperator, std::unique_ptr<Expression> &&,
-                           std::unique_ptr<Expression> &&);
+constexpr const char* binary_operator_to_string(BinaryOperator op) {
+  switch(op) {
+  case BinaryOperator::Add: return "+";
+  case BinaryOperator::Subtract: return "-";
+  case BinaryOperator::Multiply: return "*";
+  case BinaryOperator::Divide: return "/";
+  }
+}
 
+struct BinaryOperatorExpressionNode : ExpressionNode {
+  BinaryOperatorExpressionNode(BinaryOperator, std::unique_ptr<ExpressionNode> &&,
+                           std::unique_ptr<ExpressionNode> &&);
   std::string format(std::size_t) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
   BinaryOperator op;
-  std::unique_ptr<Expression> left;
-  std::unique_ptr<Expression> right;
+  std::unique_ptr<ExpressionNode> left;
+  std::unique_ptr<ExpressionNode> right;
 };
 
 enum class UnaryOperator {
@@ -176,168 +243,137 @@ enum class UnaryOperator {
   Not,
 };
 
-struct UnaryOperatorExpression : Expression {
-  UnaryOperatorExpression(UnaryOperator, std::unique_ptr<Expression> &&);
+struct UnaryOperatorExpressionNode : ExpressionNode {
+  UnaryOperatorExpressionNode(UnaryOperator, std::unique_ptr<ExpressionNode> &&);
   std::string format(std::size_t) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
   UnaryOperator op;
-  std::unique_ptr<Expression> expression;
+  std::unique_ptr<ExpressionNode> expression;
 };
 
-struct FunctionCallExpression : Expression {
-  FunctionCallExpression(std::unique_ptr<Expression> &&,
-                         std::vector<std::unique_ptr<Expression>> &&);
+struct FunctionCallExpressionNode : ExpressionNode {
+  FunctionCallExpressionNode(std::unique_ptr<ExpressionNode> &&,
+                         std::vector<std::unique_ptr<ExpressionNode>> &&);
   std::string format(std::size_t) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
-  std::unique_ptr<Expression> function;
-  std::vector<std::unique_ptr<Expression>> arguments;
+  std::unique_ptr<ExpressionNode> function;
+  std::vector<std::unique_ptr<ExpressionNode>> arguments;
 };
 
-struct ConstantExpression : Expression {
+struct ConstantExpressionNode : ExpressionNode {
 protected:
-  using Expression::Expression;
+  using ExpressionNode::ExpressionNode;
 };
 
-struct FloatConstantExpression : ConstantExpression {
-  FloatConstantExpression(std::string);
+struct FloatConstantExpressionNode : ConstantExpressionNode {
+  FloatConstantExpressionNode(std::string, std::unique_ptr<TypeNode>&&);
   std::string format(std::size_t) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
+
+  std::string value;
+  std::unique_ptr<TypeNode> suffix;
+};
+
+struct IntegerConstantExpressionNode : ConstantExpressionNode {
+  IntegerConstantExpressionNode(uint64_t, std::unique_ptr<TypeNode>&&);
+  std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
+
+  inline types::IntegerTypeInfo* get_integer_type() const {
+    return static_cast<types::IntegerTypeInfo*>(type_info.get());
+  }
+
+  std::uint64_t value;
+  std::unique_ptr<TypeNode> suffix;
+};
+
+struct StringConstantExpressionNode : ConstantExpressionNode {
+  StringConstantExpressionNode(std::string);
+  std::string format(std::size_t) const override;
+  bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
   std::string value;
 };
 
-struct IntegerConstantExpression : ConstantExpression {
-  IntegerConstantExpression(std::string);
-  std::string format(std::size_t) const override;
-  bool operator==(const Node& other) const override;
-
-  std::string value;
-};
-
-struct StringConstantExpression : ConstantExpression {
-  StringConstantExpression(std::string);
-  std::string format(std::size_t) const override;
-  bool operator==(const Node& other) const override;
-
-  std::string value;
-};
-
-struct FunctionDefinitionArgument : Node {
-  FunctionDefinitionArgument(std::unique_ptr<Identifier> &&identifier,
-                             std::unique_ptr<ast::Type> &&type);
-
-  std::unique_ptr<Identifier> identifier;
-  std::unique_ptr<ast::Type> argument_type;
-
+struct FunctionDefinitionArgumentNode : Node {
+  FunctionDefinitionArgumentNode(std::unique_ptr<IdentifierNode> &&identifier,
+                             std::unique_ptr<ast::TypeNode> &&type);
   std::string format(std::size_t indent) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
+
+  std::unique_ptr<IdentifierNode> identifier;
+  std::unique_ptr<ast::TypeNode> argument_type;
 };
 
-struct Block : Node {
-  Block(std::vector<std::unique_ptr<Statement>> &&statements);
+struct BlockNode : Node {
+  BlockNode(std::vector<std::unique_ptr<StatementNode>> &&statements);
   std::string format(std::size_t) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
-  std::vector<std::unique_ptr<Statement>> statements;
+  std::vector<std::unique_ptr<StatementNode>> statements;
 };
 
-struct FunctionDefinition : Binding {
-  FunctionDefinition(
-      std::vector<std::unique_ptr<FunctionDefinitionArgument>> &&arguments,
-      std::optional<std::unique_ptr<ast::Type>> &&return_type,
-      std::unique_ptr<Block> &&block);
+struct FunctionDefinitionNode : BindingNode {
+  FunctionDefinitionNode(
+      std::vector<std::unique_ptr<FunctionDefinitionArgumentNode>> &&arguments,
+      std::optional<std::unique_ptr<ast::TypeNode>> &&return_type,
+      std::unique_ptr<BlockNode> &&block);
   std::string format(std::size_t) const override;
   bool operator==(const Node& other) const override;
+  void typecheck(TypecheckContext&) override;
 
-  std::vector<std::unique_ptr<FunctionDefinitionArgument>> arguments;
-  std::optional<std::unique_ptr<ast::Type>> return_type;
-  std::unique_ptr<Block> block;
+  std::vector<std::unique_ptr<FunctionDefinitionArgumentNode>> arguments;
+  std::optional<std::unique_ptr<ast::TypeNode>> return_type;
+  bool is_variadic = false;
+  std::unique_ptr<BlockNode> block;
 };
 
 struct ParseError {
   enum class Type {
     UnexpectedToken,
     UnexpectedEOF,
+    InvalidFloatSuffix,
+    InvalidIntegerSuffix,
+    IntegerOOB,
+    InvalidInteger,
   };
 
   std::optional<lex::Token> source_token;
-  std::vector<Node::Type> node_stack;
+  std::vector<NodeType> node_stack;
   Type type;
   std::string message;
 };
 
-template <typename T = Program>
+template <typename T = ProgramNode>
 using ParseResult = std::expected<std::unique_ptr<T>, ParseError>;
-
 ParseResult<> try_parse(std::vector<lex::Token> tokens);
+
+using TypecheckResult = std::expected<std::unique_ptr<ast::ProgramNode>, TypecheckError>;
+TypecheckResult try_typecheck(std::unique_ptr<ast::ProgramNode>&&);
 
 } // namespace ast
 } // namespace kl
 
 template <>
-struct std::formatter<kl::ast::Node::Type> : std::formatter<std::string> {
-  auto format(const kl::ast::Node::Type &type, std::format_context &ctx) const {
-    using Type = kl::ast::Node::Type;
-    std::string s;
-    switch (type) {
-    case kl::ast::Node::Type::Program:
-      s = "Program";
-      break;
-    case kl::ast::Node::Type::BindingDeclaration:
-      s = "BindingDeclaration";
-      break;
-    case kl::ast::Node::Type::Binding:
-      s = "Binding";
-      break;
-    case kl::ast::Node::Type::Node:
-      s = "Node";
-      break;
-    case kl::ast::Node::Type::Identifier:
-      s = "Identifier";
-      break;
-    case kl::ast::Node::Type::TopLevelDeclaration:
-      s = "TopLevelDeclaration";
-      break;
-    case kl::ast::Node::Type::FunctionDefinition:
-      s = "FunctionDefinition";
-      break;
-    case kl::ast::Node::Type::FunctionDefinitionArgument:
-      s = "FunctionDefinitionArgument";
-      break;
-    case kl::ast::Node::Type::Block:
-      s = "Block";
-      break;
-    case kl::ast::Node::Type::Type:
-      s = "Type";
-      break;
-    case kl::ast::Node::Type::IntegerConstantExpression:
-      s = "IntegerConstantExpression";
-      break;
-    case kl::ast::Node::Type::FloatConstantExpression:
-      s = "FloatConstantExpression";
-      break;
-    case kl::ast::Node::Type::StringConstantExpression:
-      s = "StringConstantExpression";
-      break;
-    case kl::ast::Node::Type::ExpressionStatement:
-      s = "ExpressionStatement";
-      break;
-    case kl::ast::Node::Type::FunctionCallExpression:
-      s = "FunctionCallExpression";
-      break;
-    case kl::ast::Node::Type::BinaryOperatorExpression:
-      s = "BinaryOperatorExpression";
-      break;
-    case kl::ast::Node::Type::IdentifierExpression:
-      s = "IdentifierExpression";
-      break;
-    case kl::ast::Node::Type::UnaryOperatorExpression:
-      s = "UnaryOperatorExpression";
-      break;
-    }
-    return std::formatter<std::string>::format(s, ctx);
+struct std::formatter<kl::ast::NodeType> : std::formatter<std::string> {
+  auto format(const kl::ast::NodeType &type, std::format_context &ctx) const {
+    return std::formatter<std::string>::format(kl::ast::node_type_to_string(type), ctx);
+  }
+};
+
+template <>
+struct std::formatter<kl::ast::BinaryOperator> : std::formatter<std::string> {
+  auto format(kl::ast::BinaryOperator op, std::format_context &ctx) const {
+    return std::formatter<std::string>::format(kl::ast::binary_operator_to_string(op), ctx);
   }
 };
 
@@ -356,23 +392,30 @@ struct std::formatter<kl::ast::ParseError> : std::formatter<std::string> {
 };
 
 template <>
-struct std::formatter<kl::ast::Program> : std::formatter<std::string> {
-  auto format(const kl::ast::Program &program, std::format_context &ctx) const {
+struct std::formatter<kl::ast::ProgramNode> : std::formatter<std::string> {
+  auto format(const kl::ast::ProgramNode &program, std::format_context &ctx) const {
     return std::formatter<std::string>::format(
         std::format("{}", program.format(0)), ctx);
   }
 };
 
 template <>
-struct std::formatter<kl::ast::BuiltinType> : std::formatter<std::string> {
-  auto format(const kl::ast::BuiltinType &builtin, std::format_context &ctx) const {
-    std::string s;
-    switch(builtin) {
-    case kl::ast::BuiltinType::Unit:
-      s = "Unit";
-      break;
-    }
-    return std::formatter<std::string>::format(s, ctx);
+struct std::formatter<kl::ast::TypecheckError::Type> : std::formatter<std::string> {
+  auto format(kl::ast::TypecheckError::Type type,
+              std::format_context &ctx) const {
+    return std::formatter<std::string>::format(
+	kl::ast::TypecheckError::type_to_string(type),
+        ctx);
+  }
+};
+
+template <>
+struct std::formatter<kl::ast::TypecheckError> : std::formatter<std::string> {
+  auto format(const kl::ast::TypecheckError &error,
+              std::format_context &ctx) const {
+    return std::formatter<std::string>::format(
+	std::format("TypecheckError({}) {}", error.type, error.message),
+        ctx);
   }
 };
 

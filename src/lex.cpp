@@ -53,7 +53,7 @@ struct Context {
   bool is_whitespace() const { return !is_end() && is_whitespace(peek()); }
 
   static bool is_whitespace(char ch) {
-    return std::isblank(static_cast<int>(ch));
+    return std::isblank(static_cast<int>(ch)) && !is_newline(ch);
   }
 
   bool is_end() const { return location.index >= sv.size(); }
@@ -188,6 +188,8 @@ SublexResult try_lex_symbol(Context &ctx) {
 
 static std::unordered_map<std::string, Token::Type> keyword_map{
     {"fn", Token::Type::Fn},
+    {"extern", Token::Type::Extern},
+    {"return", Token::Type::Return},
 };
 
 SublexResult try_lex_type_identifier_or_keyword(Context &ctx) {
@@ -335,8 +337,8 @@ SublexResult try_lex_string(Context &ctx) {
 using Sublexer = SublexResult (*)(Context &);
 
 static auto sublexers = std::to_array<Sublexer>({
-    try_lex_whitespace,
     try_lex_newline,
+    try_lex_whitespace,
     try_lex_number,
     try_lex_symbol,
     try_lex_type_identifier_or_keyword,
