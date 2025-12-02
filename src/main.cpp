@@ -73,12 +73,14 @@ int main_impl(int argc, char *argv[]) {
       return COMPILE_RESULT_FILE_ERROR;
     }
     // turn off exceptions, since getline causes an exception
-    input_fstream->exceptions(0);
+    input_fstream->exceptions(std::ios::goodbit);
   }
 
   if (output_path != "-") {
-    int flags = std::ios::out | std::ios::trunc;
-    flags |= output_is_binary ? std::ios::binary : 0;
+    std::ios_base::openmode flags = std::ios::out | std::ios::trunc;
+    if (output_is_binary) {
+      flags |= std::ios::binary;
+    }
     output_fstream = std::ofstream{};
     output_fstream->exceptions(std::ios::failbit);
     try {

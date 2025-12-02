@@ -75,6 +75,17 @@ struct FloatTypeInfo : TypeInfo {
   bool operator==(const TypeInfo &) const override;
 };
 
+struct StringTypeInfo : TypeInfo {
+  StringTypeInfo();
+  StringTypeInfo(const StringTypeInfo &) = default;
+  std::unique_ptr<TypeInfo> clone() const override;
+
+  constexpr size_t get_size_bits() const override { return 64; }
+  llvm::Type *get_llvm_type(llvm::LLVMContext &ctx) const override;
+  std::string to_string() const override;
+  bool operator==(const TypeInfo &) const override;
+};
+
 struct FunctionTypeInfo : TypeInfo {
   FunctionTypeInfo(std::unique_ptr<TypeInfo> &&,
                    std::vector<std::unique_ptr<TypeInfo>> &&,

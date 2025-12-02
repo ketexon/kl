@@ -88,6 +88,18 @@ struct TypecheckContext {
       return global_scope.get();
     }
   }
+
+  const types::TypeInfo* get_identifier_type(const std::string& s) {
+    auto opt = (function_scope ? function_scope->try_get_identifier_type(s) : std::nullopt)
+      .or_else([&](){ return global_scope->try_get_identifier_type(s);});
+    if (opt.has_value()) {
+      return opt.value();
+    }
+    throw types::TypeError {
+      types::TypeError::Type::UndeclaredIdentifier,
+      std::format("Undeclared identifier: {}", s),
+    };
+  }
 };
 
 struct TypecheckError {
@@ -139,6 +151,7 @@ struct IdentifierNode : Node {
   void typecheck(TypecheckContext&) override;
 
   std::string name;
+  std::unique_ptr<types::TypeInfo> type_info;
 };
 
 struct TopLevelDeclarationNode : Node {

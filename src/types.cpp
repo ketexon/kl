@@ -112,6 +112,25 @@ bool FloatTypeInfo::operator==(const TypeInfo &other_type) const {
   return other.num_bits == num_bits;
 }
 
+std::unique_ptr<TypeInfo> StringTypeInfo::clone() const {
+  return std::make_unique<StringTypeInfo>(*this);
+}
+
+StringTypeInfo::StringTypeInfo()
+    : TypeInfo{TypeInfoType::Integer} {}
+
+llvm::Type *StringTypeInfo::get_llvm_type(llvm::LLVMContext &ctx) const {
+  return llvm::PointerType::get(ctx, 0);
+}
+
+std::string StringTypeInfo::to_string() const {
+  return "String";
+}
+
+bool StringTypeInfo::operator==(const TypeInfo &other) const {
+  return other.type == type;
+}
+
 FunctionTypeInfo::FunctionTypeInfo(
     std::unique_ptr<TypeInfo> &&return_type,
     std::vector<std::unique_ptr<TypeInfo>> &&args, bool is_variadic)

@@ -1,6 +1,8 @@
 #include "parse.hpp"
 #include "types.hpp"
+#include <map>
 #include <memory>
+#include <tuple>
 #include <typecheck.hpp>
 
 namespace kl {
@@ -29,6 +31,10 @@ void BindingDeclarationNode::typecheck(struct kl::ast::TypecheckContext &ctx) {
 }
 
 void FunctionDefinitionNode::typecheck(TypecheckContext &ctx) {
+  std::unique_ptr<types::Scope> old_function_scope =
+      std::move(ctx.function_scope);
+  ctx.function_scope = std::make_unique<types::Scope>();
+
   std::vector<std::unique_ptr<types::TypeInfo>> argument_types;
   for (const auto &arg : arguments) {
     arg->typecheck(ctx);
@@ -48,12 +54,8 @@ void FunctionDefinitionNode::typecheck(TypecheckContext &ctx) {
 
   type_info = function_type_info->clone();
 
-  std::unique_ptr<types::Scope> old_function_scope =
-      std::move(ctx.function_scope);
   std::unique_ptr<types::FunctionTypeInfo> old_function_type_info =
       std::move(ctx.function_type_info);
-
-  ctx.function_scope = std::make_unique<types::Scope>();
   ctx.function_type_info = std::move(function_type_info);
 
   block->typecheck(ctx);
@@ -62,23 +64,16 @@ void FunctionDefinitionNode::typecheck(TypecheckContext &ctx) {
   ctx.function_type_info = std::move(old_function_type_info);
 }
 
-void BlockNode::typecheck(struct kl::ast::TypecheckContext &ctx) { assert(false); }
+void BlockNode::typecheck(struct kl::ast::TypecheckContext &ctx) {
+  auto old_scope = std::move(ctx.function_scope);
+  ctx.function_scope = std::make_unique<types::Scope>();
+  ctx.function_scope->parent_scope = old_scope.get();
 
-void BinaryOperatorExpressionNode::typecheck(TypecheckContext &ctx) {
-  left->typecheck(ctx);
-  right->typecheck(ctx);
-
-  auto &left_type = left->type_info;
-  auto &right_type = left->type_info;
-  if (*left_type != *right_type) {
-    throw types::TypeError{
-        types::TypeError::Type::InvalidOperand,
-        std::format("Invalid operands for binary operator {}: {} and {}", op,
-                    left_type->to_string(), right_type->to_string()),
-    };
+  for (const auto &stmt : statements) {
+    stmt->typecheck(ctx);
   }
 
-  type_info = left_type->clone();
+  ctx.function_scope = std::move(old_scope);
 }
 
 static std::unordered_map<std::string, types::FloatTypeInfo> float_suffix_types{
@@ -105,6 +100,7 @@ static std::unordered_map<std::string, types::IntegerTypeInfo>
 static types::IntegerTypeInfo default_integer_type{32, true};
 
 void FloatConstantExpressionNode::typecheck(TypecheckContext &ctx) {
+  suffix->typecheck(ctx);
   type_info = suffix->type_info->clone();
   if (type_info->type != types::TypeInfoType::Float) {
     throw types::TypeError{
@@ -113,14 +109,24 @@ void FloatConstantExpressionNode::typecheck(TypecheckContext &ctx) {
   }
 }
 
+void IntegerConstantExpressionNode::typecheck(TypecheckContext &ctx) {
+  suffix->typecheck(ctx);
+  type_info = suffix->type_info->clone();
+  if (type_info->type != types::TypeInfoType::Float) {
+    throw types::TypeError{
+        types::TypeError::Type::InvalidIntegerSuffix,
+        std::format("Invalid suffix for integer: {}", *type_info)};
+  }
+}
+
 void FunctionCallExpressionNode::typecheck(TypecheckContext &ctx) {
   function->typecheck(ctx);
 
   const auto &uncasted_function_type_info = *function->type_info;
   if (uncasted_function_type_info.type != types::TypeInfoType::Function) {
-    throw types::TypeError{
-        types::TypeError::Type::InvalidOperand,
-        std::format("Tried to call value of type {}", uncasted_function_type_info)};
+    throw types::TypeError{types::TypeError::Type::InvalidOperand,
+                           std::format("Tried to call value of type {}",
+                                       uncasted_function_type_info)};
   }
   const auto &function_type_info =
       static_cast<const types::FunctionTypeInfo &>(uncasted_function_type_info);
@@ -162,22 +168,64 @@ void FunctionCallExpressionNode::typecheck(TypecheckContext &ctx) {
   type_info = function_type_info.return_type->clone();
 }
 
+void IdentifierNode::typecheck(struct kl::ast::TypecheckContext &ctx) {
+  type_info = ctx.get_identifier_type(name)->clone();
+}
+
 void IdentifierExpressionNode::typecheck(TypecheckContext &ctx) {
+  identifier->typecheck(ctx);
+  type_info = identifier->type_info->clone();
+}
+
+void StringConstantExpressionNode::typecheck(TypecheckContext &ctx) {
+  type_info = std::make_unique<types::StringTypeInfo>();
+}
+
+std::map<std::tuple<BinaryOperator, std::unique_ptr<types::TypeInfo>,
+                    std::unique_ptr<types::TypeInfo>>,
+         std::optional<types::TypeInfoType>>
+    binary_operator_types{
+    };
+
+void BinaryOperatorExpressionNode::typecheck(TypecheckContext &ctx) {
+  left->typecheck(ctx);
+  right->typecheck(ctx);
+
+  auto &left_type = left->type_info;
+  auto &right_type = left->type_info;
+
+  auto left_type_type = left_type->type;
+
+  if (left_type_type == types::TypeInfoType::Integer || left_type_type == types::TypeInfoType::Float) {
+    if (*left_type != *right_type) {
+      throw types::TypeError{
+	  types::TypeError::Type::InvalidOperand,
+	  std::format("Invalid operands for binary operator {}: {} and {}", op,
+		      left_type->to_string(), right_type->to_string()),
+      };
+    }
+    type_info = left_type->clone();
+  }
   assert(false);
 }
 
-void IntegerConstantExpressionNode::typecheck(TypecheckContext &ctx) { assert(false); }
-
-void StringConstantExpressionNode::typecheck(TypecheckContext &ctx) { assert(false); }
-
-void UnaryOperatorExpressionNode::typecheck(TypecheckContext &ctx) { assert(false); }
+void UnaryOperatorExpressionNode::typecheck(TypecheckContext &ctx) {
+  expression->typecheck(ctx);
+  type_info = expression->type_info->clone();
+}
 
 void ExpressionStatementNode::typecheck(struct kl::ast::TypecheckContext &ctx) {
+  expression->typecheck(ctx);
 }
+
 void FunctionDefinitionArgumentNode::typecheck(
-    struct kl::ast::TypecheckContext &ctx) { assert(false); }
-void IdentifierNode::typecheck(struct kl::ast::TypecheckContext &ctx) { assert(false); }
-void ReturnStatementNode::typecheck(struct kl::ast::TypecheckContext &ctx) { assert(false); }
+    struct kl::ast::TypecheckContext &ctx) {
+  argument_type->typecheck(ctx);
+}
+
+void ReturnStatementNode::typecheck(struct kl::ast::TypecheckContext &ctx) {
+  assert(false);
+}
 
 void TypeNode::typecheck(struct kl::ast::TypecheckContext &ctx) {
   type_info = ctx.type_system->get_type(name)->clone();
