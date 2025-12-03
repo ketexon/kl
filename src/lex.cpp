@@ -3,7 +3,9 @@
 #include <array>
 #include <cctype>
 #include <expected>
+#include <initializer_list>
 #include <iostream>
+#include <map>
 #include <print>
 #include <sstream>
 #include <string>
@@ -12,6 +14,12 @@
 
 namespace kl {
 namespace lex {
+
+LexError::LexError(SourceSpan source_span, Type type, std::string message)
+    : Error{Stage::Lex}, source_span{source_span}, type{type},
+      message{message} {
+  error_what = std::format("{}", *this);
+}
 
 struct Context {
   Context(std::string_view sv, std::string filename)
@@ -31,6 +39,13 @@ struct Context {
 
   char peek() const { return sv[location.index]; }
 
+  std::optional<char> peek_nth_opt(size_t n) const {
+    if (location.index + n < sv.size()) {
+      return sv[location.index + n];
+    }
+    return std::nullopt;
+  }
+
   char eat() {
     char result = sv[location.index];
     location.index += 1;
@@ -40,6 +55,12 @@ struct Context {
       location.column = 1;
     }
     return result;
+  }
+
+  void eat_n(size_t n) {
+    while (n-- > 0) {
+      eat();
+    }
   }
 
   char is(char ch) { return !is_end() && peek() == ch; }
@@ -158,31 +179,76 @@ SublexResult try_lex_newline(Context &ctx) {
   return true;
 }
 
-static std::unordered_map<char, Token::Type> symbol_map{
-    {'(', Token::Type::LParen},
-    {')', Token::Type::RParen},
-    {'{', Token::Type::LBrace},
-    {'}', Token::Type::RBrace},
-    {':', Token::Type::Colon},
-    {';', Token::Type::Semicolon},
-    {',', Token::Type::Comma},
-    {'.', Token::Type::Period},
+struct Trie {
+  struct Node {
+    std::optional<Token::Type> value;
+    std::unordered_map<char, Node> children;
+  };
+  Node root;
+
+  Node &get_or_insert(std::string s) {
+    Node* cur_node = &root;
+    for (char ch : s) {
+      cur_node = &cur_node->children[ch];
+    }
+    return *cur_node;
+  }
+
+  Trie(std::initializer_list<std::pair<std::string, Token::Type>> entries) {
+    for (const auto &[string, value] : entries) {
+      get_or_insert(string).value = value;
+    }
+  }
+};
+
+const Trie symbol_trie{
+    {"(", Token::Type::LParen},
+    {")", Token::Type::RParen},
+    {"{", Token::Type::LBrace},
+    {"}", Token::Type::RBrace},
+    {":", Token::Type::Colon},
+    {";", Token::Type::Semicolon},
+    {",", Token::Type::Comma},
+    {".", Token::Type::Period},
     // arithmetic
-    {'=', Token::Type::Equals},
-    {'+', Token::Type::Plus},
-    {'-', Token::Type::Minus},
-    {'*', Token::Type::Star},
-    {'/', Token::Type::ForwardSlash},
+    {"=", Token::Type::Equals},
+    {"+", Token::Type::Plus},
+    {"-", Token::Type::Minus},
+    {"*", Token::Type::Star},
+    {"/", Token::Type::ForwardSlash},
+
+    {"...", Token::Type::Ellipses},
 };
 
 SublexResult try_lex_symbol(Context &ctx) {
   ctx.begin_token();
-  char symbol = ctx.peek();
-  if (!symbol_map.contains(symbol)) {
+  std::optional<Token::Type> type;
+  size_t num_eaten = 0;
+  size_t num_peeked = 0;
+  auto cur_node = &symbol_trie.root;
+
+  while (true) {
+    std::optional<char> peeked = ctx.peek_nth_opt(num_peeked);
+    num_peeked += 1;
+
+    if (!peeked.has_value()) {
+      break;
+    }
+    auto it = cur_node->children.find(peeked.value());
+    if (it == cur_node->children.end()) {
+      break;
+    }
+    cur_node = &it->second;
+    if (cur_node->value.has_value()) {
+      type = cur_node->value;
+      num_eaten = num_peeked;
+    }
+  }
+  if (!type.has_value()) {
     return false;
   }
-  ctx.eat();
-  ctx.end_token(symbol_map.at(symbol));
+  ctx.eat_n(num_eaten);
+  ctx.end_token(type.value());
   return true;
 }
 

@@ -1,3 +1,5 @@
+printf = fn(format: String, ...): I32 extern "printf"
+
 f = fn(): I32 {
   return 10I32
 }

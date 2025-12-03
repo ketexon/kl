@@ -1,5 +1,6 @@
 #include "codegen.hpp"
 #include "parse.hpp"
+#include "types.hpp"
 #include <expected>
 
 #include <llvm/ADT/APInt.h>
@@ -17,6 +18,11 @@
 namespace kl {
 namespace codegen {
 
+CodegenError::CodegenError(Type type, std::string message)
+    : Error{Stage::Codegen}, type{type}, message{message} {
+  error_what = std::format("{}", *this);
+}
+
 struct Scope {
   std::unordered_map<std::string, llvm::Value *> identifiers;
 };
@@ -25,6 +31,9 @@ struct CodegenContext {
   std::shared_ptr<llvm::LLVMContext> llvm_context;
   std::unique_ptr<llvm::Module> module;
   std::unique_ptr<llvm::IRBuilder<>> ir_builder;
+
+  const types::FunctionTypeInfo *cur_function_type_info = nullptr;
+  llvm::Function *cur_function_value = nullptr;
 
   std::vector<Scope> scopes;
 
@@ -158,12 +167,12 @@ codegen_integer_expr(CodegenContext &ctx,
                      const ast::IntegerConstantExpressionNode &integer_expr) {
   auto integer_type = integer_expr.get_integer_type();
   auto llvm_type = integer_type->get_llvm_type(*ctx.llvm_context);
-  if (!llvm::ConstantInt::isValueValidForType(llvm_type,
-                                              integer_expr.value)) {
+  if (!llvm::ConstantInt::isValueValidForType(llvm_type, integer_expr.value)) {
     throw CodegenError{
         CodegenError::Type::IntegerOutOfBounds,
-        std::format("integer {} out of bounds for type {}", integer_expr.value,
-                    static_cast<const types::TypeInfo &>(*integer_expr.type_info)),
+        std::format(
+            "integer {} out of bounds for type {}", integer_expr.value,
+            static_cast<const types::TypeInfo &>(*integer_expr.type_info)),
     };
   }
   return llvm::ConstantInt::get(llvm_type, integer_expr.value,
@@ -195,7 +204,7 @@ llvm::Value *codegen_expression(CodegenContext &ctx,
         static_cast<const ast::IntegerConstantExpressionNode &>(expression));
   default:
     std::println("UNIMPLEMENTED CODEGEN_EXPRESSION: {}", expression.type);
-    throw "unimplemented";
+    assert(false);
   }
 }
 
@@ -207,7 +216,8 @@ void codegen_expression_statement(
 void codegen_return_statement(
     CodegenContext &ctx, const ast::ReturnStatementNode &return_statement) {
   if (return_statement.expression.has_value()) {
-    ctx.ir_builder->CreateRet(codegen_expression(ctx, *return_statement.expression.value()));
+    ctx.ir_builder->CreateRet(
+        codegen_expression(ctx, *return_statement.expression.value()));
   } else {
     ctx.ir_builder->CreateRetVoid();
   }
@@ -224,7 +234,7 @@ void codegen_statement(CodegenContext &ctx,
         ctx, static_cast<const ast::ReturnStatementNode &>(statement));
   default:
     std::println("UNIMPLEMENTED CODEGEN_BLOCK: {}", statement.type);
-    throw "unimplemented";
+    assert(false);
   }
 }
 
@@ -234,38 +244,62 @@ void codegen_block(CodegenContext &ctx, const ast::BlockNode &block) {
   }
 }
 
-void codegen_function_binding_decl(
-    CodegenContext &ctx, const ast::BindingDeclarationNode &binding_decl,
-    const ast::FunctionDefinitionNode &function_def) {
-  std::vector<llvm::Type *> arg_types;
-  llvm::Type *return_type = llvm::Type::getVoidTy(*ctx.llvm_context);
-  llvm::FunctionType *function_type =
-      llvm::FunctionType::get(return_type, arg_types, false);
-
-  auto function =
-      llvm::Function::Create(function_type, llvm::Function::ExternalLinkage,
-                             binding_decl.identifier->name, ctx.module.get());
-
-  auto basic_block = llvm::BasicBlock::Create(*ctx.llvm_context, "", function);
-
+void codegen_internal_function_implementation(
+    CodegenContext &ctx, const ast::InternalFunctionImplementationNode &impl) {
+  auto &block = *impl.block;
+  auto basic_block =
+      llvm::BasicBlock::Create(*ctx.llvm_context, "", ctx.cur_function_value);
   ctx.ir_builder->SetInsertPoint(basic_block);
-  codegen_block(ctx, *function_def.block);
+  codegen_block(ctx, block);
 
   auto terminator = basic_block->getTerminator();
   if (!terminator) {
-    if (return_type->isVoidTy()) {
+    if (ctx.cur_function_type_info->return_type->is_unit()) {
       ctx.ir_builder->CreateRet(nullptr);
     } else {
       throw CodegenError{
           CodegenError::Type::ReturnTypeMismatch,
           std::format("Expected return type {}, got void",
-                      (*function_def.return_type)->format(0)),
+                      *ctx.cur_function_type_info->return_type),
 
       };
     }
   }
 
-  ctx.verify_function(function);
+  ctx.verify_function(ctx.cur_function_value);
+}
+
+void codegen_external_function_implementation(
+    CodegenContext &ctx, const ast::ExternalFunctionImplementationNode &impl) {
+  if (impl.symbol.has_value()) {
+    ctx.cur_function_value->setName(impl.symbol.value());
+  }
+}
+
+void codegen_function_binding_decl(
+    CodegenContext &ctx, const ast::BindingDeclarationNode &binding_decl,
+    const ast::FunctionDefinitionNode &function_def) {
+  auto function_type = static_cast<llvm::FunctionType *>(
+      function_def.type_info->get_llvm_type(*ctx.llvm_context));
+
+  auto function =
+      llvm::Function::Create(function_type, llvm::Function::ExternalLinkage,
+                             binding_decl.identifier->name, ctx.module.get());
+
+  ctx.cur_function_value = function;
+  ctx.cur_function_type_info = static_cast<const types::FunctionTypeInfo *>(
+      function_def.type_info.get());
+  if (function_def.implementation->type ==
+      ast::NodeType::InternalFunctionImplementation) {
+    const auto& impl = static_cast<const ast::InternalFunctionImplementationNode &>(
+        *function_def.implementation);
+    codegen_internal_function_implementation(ctx, impl);
+  } else if(function_def.implementation->type ==
+      ast::NodeType::ExternalFunctionImplementation) {
+    const auto& impl = static_cast<const ast::ExternalFunctionImplementationNode &>(
+        *function_def.implementation);
+    codegen_external_function_implementation(ctx, impl);
+  }
 }
 
 void codegen_binding_decl(CodegenContext &ctx,
@@ -274,43 +308,16 @@ void codegen_binding_decl(CodegenContext &ctx,
   case ast::NodeType::FunctionDefinition:
     codegen_function_binding_decl(
         ctx, binding_decl,
-        static_cast<const ast::FunctionDefinitionNode &>(*binding_decl.binding));
+        static_cast<const ast::FunctionDefinitionNode &>(
+            *binding_decl.binding));
     break;
   default:
     std::println("UNIMPLEMENTED BINDING DECL: {}", binding_decl.binding->type);
-    throw "unimplemented";
+    assert(false);
   }
 }
 
 void codegen_builtins(CodegenContext &ctx) {
-  {
-    std::vector<llvm::Type *> arg_types;
-    arg_types.push_back(llvm::PointerType::get(*ctx.llvm_context, 0));
-
-    llvm::Type *return_type = llvm::FunctionType::getInt32Ty(*ctx.llvm_context);
-    llvm::FunctionType *function_type =
-        llvm::FunctionType::get(return_type, arg_types, false);
-
-    auto function =
-        llvm::Function::Create(function_type, llvm::Function::ExternalLinkage,
-                               "puts", ctx.module.get());
-
-    ctx.scopes.back().identifiers["puts"] = function;
-  }
-  {
-    std::vector<llvm::Type *> arg_types;
-    arg_types.push_back(llvm::PointerType::get(*ctx.llvm_context, 0));
-
-    llvm::Type *return_type = llvm::FunctionType::getInt32Ty(*ctx.llvm_context);
-    llvm::FunctionType *function_type =
-        llvm::FunctionType::get(return_type, arg_types, true);
-
-    auto function =
-        llvm::Function::Create(function_type, llvm::Function::ExternalLinkage,
-                               "printf", ctx.module.get());
-
-    ctx.scopes.back().identifiers["printf"] = function;
-  }
 }
 
 void codegen_program(CodegenContext &ctx, const ast::ProgramNode &node) {
@@ -325,7 +332,7 @@ void codegen_program(CodegenContext &ctx, const ast::ProgramNode &node) {
       break;
     default:
       std::println("UNIMPLEMENTED PROGRAM: {}", decl->type);
-      throw "unimplemented";
+      assert(false);
     }
   }
 
@@ -335,7 +342,7 @@ void codegen_program(CodegenContext &ctx, const ast::ProgramNode &node) {
 llvm::Value *codegen_float(CodegenContext &ctx, const ast::Node &node) {
   const auto &program =
       static_cast<const ast::FloatConstantExpressionNode &>(node);
-  throw "unimplemented";
+  assert(false);
 }
 
 CodegenResult try_codegen(std::shared_ptr<llvm::LLVMContext> llvm_context,

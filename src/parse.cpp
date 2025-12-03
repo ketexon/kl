@@ -1,10 +1,12 @@
 #include "lex.hpp"
+#include <iostream>
 #include <llvm/ADT/APFloat.h>
 #include <memory>
 #include <parse.hpp>
 
 #include <expected>
 #include <format>
+#include <print>
 #include <span>
 #include <stdexcept>
 #include <unordered_map>
@@ -17,6 +19,14 @@
 
 namespace kl {
 namespace ast {
+
+ParseError::ParseError(std::optional<lex::Token> source_token,
+                       std::vector<NodeType> node_stack, Type type,
+                       std::string message)
+    : Error{Stage::Parse}, source_token{source_token}, node_stack{node_stack},
+      type{type}, message{message} {
+  error_what = std::format("{}", *this);
+}
 
 struct Context {
   std::span<lex::Token> tokens;
@@ -66,11 +76,11 @@ struct Context {
 
   lex::Token eat_type_or_throw(lex::Token::Type expected_type,
                                std::string error_message = "") {
-    auto token_opt = eat_opt();
+    auto token_opt = peek_opt();
     if (!token_opt || token_opt->type != expected_type) {
       throw_unexpected(expected_type);
     }
-    return token_opt.value();
+    return eat();
   }
 
   lex::Token eat_if_in_or_throw(std::unordered_set<lex::Token::Type> set) {
@@ -178,6 +188,7 @@ struct NodeParseContext {
 };
 
 std::unique_ptr<IdentifierNode> parse_identifier(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   NodeParseContext _{ctx, NodeType::Identifier};
 
   auto token = ctx.eat_type_or_throw(lex::Token::Type::Identifier);
@@ -187,6 +198,7 @@ std::unique_ptr<IdentifierNode> parse_identifier(Context &ctx) {
 }
 
 std::unique_ptr<TypeNode> parse_type(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   NodeParseContext _{ctx, NodeType::Type};
 
   auto token = ctx.eat_type_or_throw(lex::Token::Type::Type);
@@ -197,6 +209,7 @@ std::unique_ptr<TypeNode> parse_type(Context &ctx) {
 
 std::unique_ptr<FunctionDefinitionArgumentNode>
 parse_function_definition_argument(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   NodeParseContext _{ctx, NodeType::FunctionDefinitionArgument};
 
   auto identifier = parse_identifier(ctx);
@@ -226,6 +239,7 @@ static std::unordered_map<lex::Token::Type, UnaryOperator> prefix_operator_map{
 std::unique_ptr<ExpressionNode> parse_expression(Context &ctx);
 
 std::unique_ptr<ExpressionNode> parse_integer(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   auto token = ctx.eat();
 
   std::uint64_t value_ull;
@@ -257,17 +271,19 @@ std::unique_ptr<ExpressionNode> parse_integer(Context &ctx) {
 }
 
 std::unique_ptr<ExpressionNode> parse_float(Context &ctx) {
-    auto token = ctx.eat();
+  std::println("{}", __FUNCTION__);
+  auto token = ctx.eat();
 
-    std::unique_ptr<TypeNode> suffix;
-    if (ctx.is(lex::Token::Type::Type)) {
-      suffix = parse_type(ctx);
-    }
-    return std::make_unique<FloatConstantExpressionNode>(token.value.value(),
-                                                         std::move(suffix));
+  std::unique_ptr<TypeNode> suffix;
+  if (ctx.is(lex::Token::Type::Type)) {
+    suffix = parse_type(ctx);
+  }
+  return std::make_unique<FloatConstantExpressionNode>(token.value.value(),
+                                                       std::move(suffix));
 }
 
 std::unique_ptr<ExpressionNode> parse_factor(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   if (ctx.eat_type_opt(lex::Token::Type::LParen)) {
     auto expr = parse_expression(ctx);
     ctx.eat_type_or_throw(lex::Token::Type::RParen);
@@ -294,6 +310,7 @@ std::unique_ptr<ExpressionNode> parse_factor(Context &ctx) {
 
 std::vector<std::unique_ptr<ExpressionNode>>
 parse_function_call_args(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   std::vector<std::unique_ptr<ExpressionNode>> args;
 
   bool last = false;
@@ -319,6 +336,7 @@ parse_function_call_args(Context &ctx) {
 }
 
 std::unique_ptr<ExpressionNode> parse_postfix_expression(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   auto factor = parse_factor(ctx);
   if (ctx.eat_type_opt(lex::Token::Type::LParen)) {
     auto args = parse_function_call_args(ctx);
@@ -331,6 +349,7 @@ std::unique_ptr<ExpressionNode> parse_postfix_expression(Context &ctx) {
 }
 
 std::unique_ptr<ExpressionNode> parse_prefix_expression(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   if (ctx.is_in(prefix_operator_map)) {
     auto token = ctx.eat();
     auto op = prefix_operator_map.at(token.type);
@@ -341,6 +360,7 @@ std::unique_ptr<ExpressionNode> parse_prefix_expression(Context &ctx) {
 }
 
 std::unique_ptr<ExpressionNode> parse_mul_expression(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   auto left = parse_prefix_expression(ctx);
   if (ctx.is_in(mul_infix_operators)) {
     auto token = ctx.eat();
@@ -353,6 +373,7 @@ std::unique_ptr<ExpressionNode> parse_mul_expression(Context &ctx) {
 }
 
 std::unique_ptr<ExpressionNode> parse_add_expression(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   auto left = parse_prefix_expression(ctx);
   if (ctx.is_in(add_infix_operators)) {
     auto token = ctx.eat();
@@ -365,6 +386,7 @@ std::unique_ptr<ExpressionNode> parse_add_expression(Context &ctx) {
 }
 
 std::unique_ptr<ExpressionNode> parse_expression(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   return parse_add_expression(ctx);
 }
 
@@ -374,6 +396,7 @@ std::unordered_set<lex::Token::Type> statement_terminators{
 };
 
 std::unique_ptr<ReturnStatementNode> parse_return_statement(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   ctx.eat();
   ctx.discard_whitespace();
   std::optional<std::unique_ptr<ExpressionNode>> expression;
@@ -384,6 +407,7 @@ std::unique_ptr<ReturnStatementNode> parse_return_statement(Context &ctx) {
 }
 
 std::unique_ptr<StatementNode> parse_statement(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   if (ctx.is(lex::Token::Type::Return)) {
     return parse_return_statement(ctx);
   }
@@ -391,6 +415,8 @@ std::unique_ptr<StatementNode> parse_statement(Context &ctx) {
 }
 
 std::unique_ptr<BlockNode> parse_block(Context &ctx) {
+  std::println("{}", ctx.peek());
+  std::println("{}", __FUNCTION__);
   NodeParseContext _{ctx, NodeType::Block};
 
   std::vector<std::unique_ptr<StatementNode>> statements;
@@ -423,7 +449,33 @@ std::unique_ptr<BlockNode> parse_block(Context &ctx) {
   return std::make_unique<BlockNode>(std::move(statements));
 }
 
-std::unique_ptr<FunctionDefinitionNode> parse_function_definition(Context &ctx) {
+std::unique_ptr<ExternalFunctionImplementationNode>
+parse_external_function_implementation(Context &ctx) {
+  ctx.eat_type_opt(lex::Token::Type::Extern);
+  ctx.discard_whitespace();
+  auto symbol_opt = ctx.eat_type_opt(lex::Token::Type::String);
+  return std::make_unique<ExternalFunctionImplementationNode>(
+      symbol_opt.transform(
+          [](const auto &tok) -> std::string { return tok.value.value(); }));
+}
+
+std::unique_ptr<InternalFunctionImplementationNode>
+parse_internal_function_implementation(Context &ctx) {
+  return std::make_unique<InternalFunctionImplementationNode>(parse_block(ctx));
+}
+
+std::unique_ptr<FunctionImplementationNode>
+parse_function_implementation(Context &ctx) {
+  if (ctx.is(lex::Token::Type::Extern)) {
+    return parse_external_function_implementation(ctx);
+  } else {
+    return parse_internal_function_implementation(ctx);
+  }
+}
+
+std::unique_ptr<FunctionDefinitionNode>
+parse_function_definition(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   NodeParseContext _{ctx, NodeType::FunctionDefinition};
 
   ctx.eat_type_or_throw(lex::Token::Type::Fn);
@@ -432,11 +484,11 @@ std::unique_ptr<FunctionDefinitionNode> parse_function_definition(Context &ctx) 
   std::vector<std::unique_ptr<FunctionDefinitionArgumentNode>> arguments;
 
   bool last = false;
+  bool is_variadic = false;
   while (true) {
     ctx.discard_whitespace_and_newlines();
 
-    if (ctx.is(lex::Token::Type::RParen)) {
-      ctx.eat();
+    if (ctx.eat_type_opt(lex::Token::Type::RParen)) {
       break;
     } else if (last) {
       throw ParseError{
@@ -458,6 +510,17 @@ std::unique_ptr<FunctionDefinitionNode> parse_function_definition(Context &ctx) 
       } else {
         last = true;
       }
+    } else if (ctx.eat_type_opt(lex::Token::Type::Ellipses)) {
+      is_variadic = true;
+      ctx.eat_type_opt(lex::Token::Type::Comma);
+      last = true;
+    } else {
+      throw ParseError{
+          ctx.try_peek(),
+          ctx.node_stack,
+          ParseError::Type::UnexpectedToken,
+          std::format("Unexpected token while parsing arguments"),
+      };
     }
   }
 
@@ -470,27 +533,29 @@ std::unique_ptr<FunctionDefinitionNode> parse_function_definition(Context &ctx) 
   }
 
   ctx.discard_whitespace();
-  auto block = parse_block(ctx);
-
   return std::make_unique<FunctionDefinitionNode>(FunctionDefinitionNode{
       std::move(arguments),
       std::move(return_type),
-      std::move(block),
+      is_variadic,
+      parse_function_implementation(ctx),
   });
 }
 
 std::unique_ptr<BindingNode> parse_binding(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   NodeParseContext _{ctx, NodeType::Binding};
 
   auto token = ctx.peek_or_throw();
   if (token.type == lex::Token::Type::Fn) {
     return parse_function_definition(ctx);
   }
-  throw "Not implemented";
+  std::println(std::cerr, "unimplemented: parse_binding");
+  assert(false);
 }
 
 std::unique_ptr<BindingDeclarationNode>
 parse_binding_declaration(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   NodeParseContext _{ctx, NodeType::BindingDeclaration};
 
   auto identifier = parse_identifier(ctx);
@@ -505,6 +570,7 @@ parse_binding_declaration(Context &ctx) {
 
 std::unique_ptr<TopLevelDeclarationNode>
 parse_top_level_declaration(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   NodeParseContext _{ctx, NodeType::TopLevelDeclaration};
 
   ctx.discard_whitespace_and_newlines();
@@ -513,6 +579,7 @@ parse_top_level_declaration(Context &ctx) {
 }
 
 std::unique_ptr<ProgramNode> parse_program(Context &ctx) {
+  std::println("{}", __FUNCTION__);
   NodeParseContext _{ctx, NodeType::Program};
 
   std::vector<std::unique_ptr<TopLevelDeclarationNode>> declarations;

@@ -36,10 +36,20 @@ FunctionDefinitionArgumentNode::FunctionDefinitionArgumentNode(
 FunctionDefinitionNode::FunctionDefinitionNode(
     std::vector<std::unique_ptr<FunctionDefinitionArgumentNode>> &&arguments,
     std::optional<std::unique_ptr<ast::TypeNode>> &&return_type,
-    std::unique_ptr<BlockNode> &&block)
+    bool is_variadic, std::unique_ptr<FunctionImplementationNode> &&impl)
     : BindingNode{NodeType::FunctionDefinition},
       arguments{std::move(arguments)}, return_type{std::move(return_type)},
+      is_variadic{is_variadic}, implementation{std::move(impl)} {}
+
+InternalFunctionImplementationNode::InternalFunctionImplementationNode(
+    std::unique_ptr<BlockNode> &&block)
+    : FunctionImplementationNode{NodeType::InternalFunctionImplementation},
       block{std::move(block)} {}
+
+ExternalFunctionImplementationNode::ExternalFunctionImplementationNode(
+    std::optional<std::string> symbol)
+    : FunctionImplementationNode{NodeType::ExternalFunctionImplementation},
+      symbol{symbol} {}
 
 BlockNode::BlockNode(std::vector<std::unique_ptr<StatementNode>> &&statements)
     : Node{NodeType::Block}, statements{std::move(statements)} {}
@@ -133,9 +143,17 @@ std::string FunctionDefinitionNode::format(std::size_t indent) const {
           ? std::format(": {}",
                         *return_type ? (*return_type)->format(0) : "<nullptr>")
           : "",
-      block ? block->format(0) : "<nullptr>"
+      implementation ? implementation->format(0) : "<nullptr>"
 
   );
+}
+
+std::string InternalFunctionImplementationNode::format(std::size_t indent) const {
+  return block->format(indent);
+}
+
+std::string ExternalFunctionImplementationNode::format(std::size_t indent) const {
+  return std::format("{}extern{}", make_indent(indent), symbol.has_value() ? std::format(" {:?}", symbol.value()) : "");
 }
 
 std::string BlockNode::format(std::size_t indent) const {
@@ -203,7 +221,7 @@ std::string IntegerConstantExpressionNode::format(std::size_t indent) const {
 }
 
 std::string StringConstantExpressionNode::format(std::size_t indent) const {
-  return std::format("{}\"{}\"", make_indent(indent), value);
+  return std::format("{}{:?}", make_indent(indent), value);
 }
 
 std::string ReturnStatementNode::format(std::size_t indent) const {
@@ -279,7 +297,15 @@ return KL_AST_SUBNODE_RANGE_EQ(statements, other.statements);
 KL_AST_OPERATOR_EQ(FunctionDefinitionNode)
 return KL_AST_SUBNODE_RANGE_EQ(arguments, other.arguments) &&
        KL_AST_SUBNODE_OPT_EQ(return_type, other.return_type) &&
-       KL_AST_SUBNODE_EQ(block, other.block);
+       KL_AST_SUBNODE_EQ(implementation, other.implementation);
+}
+
+KL_AST_OPERATOR_EQ(InternalFunctionImplementationNode)
+return KL_AST_SUBNODE_EQ(block, other.block);
+}
+
+KL_AST_OPERATOR_EQ(ExternalFunctionImplementationNode)
+  return symbol == other.symbol;
 }
 
 KL_AST_OPERATOR_EQ(IdentifierNode)

@@ -9,6 +9,11 @@
 namespace kl {
 namespace types {
 
+TypeError::TypeError(Type type, std::string message)
+    : Error{Stage::Type}, type{type}, message{message} {
+      error_what = std::format("{}", *this);
+    }
+
 TypeInfo::TypeInfo(TypeInfoType ty) : type{ty} {}
 
 std::optional<const TypeInfo *>
@@ -116,16 +121,13 @@ std::unique_ptr<TypeInfo> StringTypeInfo::clone() const {
   return std::make_unique<StringTypeInfo>(*this);
 }
 
-StringTypeInfo::StringTypeInfo()
-    : TypeInfo{TypeInfoType::Integer} {}
+StringTypeInfo::StringTypeInfo() : TypeInfo{TypeInfoType::Integer} {}
 
 llvm::Type *StringTypeInfo::get_llvm_type(llvm::LLVMContext &ctx) const {
   return llvm::PointerType::get(ctx, 0);
 }
 
-std::string StringTypeInfo::to_string() const {
-  return "String";
-}
+std::string StringTypeInfo::to_string() const { return "String"; }
 
 bool StringTypeInfo::operator==(const TypeInfo &other) const {
   return other.type == type;
@@ -198,6 +200,10 @@ bool FunctionTypeInfo::operator==(const TypeInfo &other_type) const {
 TypeSystem::TypeSystem() { register_builtin_types(); }
 
 void TypeSystem::register_builtin_types() {
+  register_type("Unit", std::make_unique<UnitTypeInfo>());
+
+  register_type("String", std::make_unique<StringTypeInfo>());
+
   register_type("I8", std::make_unique<IntegerTypeInfo>(8, true));
   register_type("I16", std::make_unique<IntegerTypeInfo>(16, true));
   register_type("I32", std::make_unique<IntegerTypeInfo>(32, true));

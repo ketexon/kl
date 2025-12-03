@@ -5,11 +5,12 @@
 #include <expected>
 #include <llvm/IR/Value.h>
 #include <string>
+#include <error.hpp>
 
 namespace kl {
 namespace codegen {
 
-struct CodegenError {
+struct CodegenError : Error {
   enum class Type {
     TypeError,
     UndeclaredIdentifier,
@@ -19,6 +20,8 @@ struct CodegenError {
     InvalidIntegerLiteral,
     IntegerOutOfBounds,
   };
+
+  CodegenError(Type, std::string);
 
   Type type;
   std::string message;

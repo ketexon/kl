@@ -12,16 +12,15 @@ enum class Stage {
   Codegen = 4,
 };
 
-enum class ErrorID {
-  None = 0,
+struct Error : std::exception {
+  Error(Stage stage) : stage{stage} {}
+  const char* what() const override {
+    return error_what.c_str();
+  }
 
-  MismatchedReturnType = 30000,
-};
-
-struct Error {
   Stage stage;
-  ErrorID id;
-  std::string message;
+protected:
+  std::string error_what;
 };
 
 };

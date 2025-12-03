@@ -1,5 +1,6 @@
 #pragma once
 
+#include "error.hpp"
 #include <bit>
 
 #include "llvm/IR/LLVMContext.h"
@@ -34,6 +35,14 @@ struct TypeInfo {
   virtual std::unique_ptr<TypeInfo> clone() const = 0;
 
   virtual bool operator==(const TypeInfo &) const = 0;
+
+  constexpr bool is_numeric() const {
+    return type == TypeInfoType::Integer || type == TypeInfoType::Float;
+  }
+
+  constexpr bool is_unit() const {
+    return type == TypeInfoType::Unit;
+  }
 
   TypeInfoType type;
 };
@@ -103,7 +112,7 @@ struct FunctionTypeInfo : TypeInfo {
   bool operator==(const TypeInfo &) const override;
 };
 
-struct TypeError {
+struct TypeError : Error {
   enum class Type {
     InvalidOperand,
     InvalidFloatSuffix,
@@ -114,6 +123,9 @@ struct TypeError {
     DuplicateBinding,
     IncompatibleType,
   };
+
+  TypeError(Type, std::string);
+
   Type type;
   std::string message;
 

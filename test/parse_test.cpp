@@ -52,6 +52,10 @@ TEST_CASE("Simple Program", ParseSimpleProgram) {
   block->statements.push_back(
       std::make_unique<ast::ExpressionStatementNode>(std::move(function_call)));
 
+  auto function_impl = std::make_unique<ast::InternalFunctionImplementationNode>(
+      std::move(block)
+  );
+
   auto expected_program = std::make_unique<ast::ProgramNode>(
       std::vector<std::unique_ptr<ast::TopLevelDeclarationNode>>{});
 
@@ -60,7 +64,8 @@ TEST_CASE("Simple Program", ParseSimpleProgram) {
       std::make_unique<ast::FunctionDefinitionNode>(
           std::vector<std::unique_ptr<ast::FunctionDefinitionArgumentNode>>{},
           std::optional{std::make_unique<ast::TypeNode>("Unit")},
-          std::move(block))));
+	  false,
+          std::move(function_impl))));
 
   test.AssertEq(static_cast<ast::Node&>(*program), *expected_program, "Expected programs to match");
 }
